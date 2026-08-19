@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ndos.dev/schemas/cohort/0.1",
+  "title": "NDOS Cohort",
+  "description": "A frozen set of sessions selected by a query, recorded together with the query plan that produced it so the selection can be re-run, audited, or disputed. A cohort states not only which sessions were included but how many were excluded and how many could not be decided.",
+  "type": "object",
+  "required": [
+    "cohort_version", "name", "generated_at", "generator", "source",
+    "query_plan", "counts", "includes_unresolved", "member_count", "members"
+  ],
+  "properties": {
+    "cohort_version": { "const": "0.1" },
+    "name": { "type": "string", "minLength": 1 },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "description": "The metadata this cohort was drawn from. Recorded so a cohort can be traced back to the evidence available at the time.",
+      "type": "object",
+      "required": ["file", "metadata_version"],
+      "properties": {
+        "file": { "type": "string" },
+        "metadata_version": { "type": "string" },
+        "metadata_generated_at": { "type": "string" },
+        "session_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "query_plan": {
+      "description": "Every constraint as parsed, including the term a typed value was resolved to, so an unexpected result can be explained.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/constraint" }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["considered", "matched", "unresolved", "excluded"],
+      "properties": {
+        "considered": { "type": "integer", "minimum": 0 },
+        "matched": { "type": "integer", "minimum": 0 },
+        "unresolved": {
+          "description": "Sessions that met every criterion that could be checked, but whose deciding value was never recorded.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "includes_unresolved": {
+      "description": "Whether undecidable sessions were folded into the membership. Recorded because it materially changes what the cohort means.",
+      "type": "boolean"
+    },
+    "member_count": { "type": "integer", "minimum": 0 },
+    "members": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/member" }
+    },
+    "extensions": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "constraint": {
+      "type": "object",
+      "required": ["as_typed", "field", "operator", "source"],
+      "properties": {
+        "as_typed": { "type": "string" },
+        "field": { "type": "string" },
+        "operator": {
+          "type": "string",
+          "enum": ["=", "!=", ">", "<", ">=", "<=", "~", "present", "unknown"]
+        },
+        "value": { "type": "string" },
+        "source": { "type": "string", "enum": ["declared", "observed"] },
+        "resolved_from": {
+          "description": "What the user typed, when it was mapped onto a controlled term.",
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "member": {
+      "type": "object",
+      "required": ["ndos_id", "inclusion"],
+      "properties": {
+        "ndos_id": { "type": "string", "pattern": "^ndos-[a-f0-9]{10}$" },
+        "path": { "type": "string" },
+        "inclusion": {
+          "description": "'matched' met every criterion; 'unresolved' could not be ruled out and was included deliberately.",
+          "type": "string",
+          "enum": ["matched", "unresolved"]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -49,11 +49,12 @@ jobs:
       # bare interpreter. If this job fails, a dependency crept in.
       - name: Import and run every module with no packages installed
         run: |
-          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table"
+          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
           python ndos_table.py --help
+          python ndos_query.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -62,7 +63,10 @@ jobs:
           python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
           cat /tmp/report.md
           python ndos_table.py export /tmp/manifest.json -o /tmp/sessions.csv
-          python ndos_table.py check /tmp/sessions.csv
+          # --include-empty keeps rows that have no hand-entered metadata, so
+          # the query below has observed evidence to actually match against.
+          python ndos_table.py check /tmp/sessions.csv --emit /tmp/metadata.json --include-empty
+          python ndos_query.py /tmp/metadata.json -w 'modalities~electrophysiology' -w 'file_count>=2'
 
   schema:
     name: validate schemas

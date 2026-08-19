@@ -113,6 +113,42 @@ apart: blank means nobody has filled it in yet, `unknown` means somebody
 checked and could not determine it. `--emit` writes evidence-typed records
 against [`schemas/session_metadata.schema.json`](schemas/session_metadata.schema.json).
 
+### `ndos_query.py` — build a cohort, and see why each session qualified
+
+```bash
+python3 ndos_query.py metadata.json -w species=mouse -w sex=F \
+    -w 'target_region=CA1' -w 'session_date>=2025-03-01' \
+    -w 'modalities~electrophysiology' \
+    --save-cohort cohort.json --name ca1-ephys-spring-2025
+```
+
+Operators are `=` `!=` `>` `<` `>=` `<=` and `~` (contains). `field=*` requires
+any value; `field=?` finds values recorded as unknown. Queries are normalised
+the same way the data was, so `species=mouse` finds sessions recorded as
+`mus musculus`, and the report shows you that substitution.
+
+**Results come in three groups, not two.** A session whose sex was never
+recorded is not a non-match — it is an open question, and quietly dropping it
+biases the cohort in a way nobody sees. So NDOS reports:
+
+| Group | Meaning |
+| --- | --- |
+| Matched | Every criterion satisfied, each citing the field, value, and evidence status it rests on |
+| **Cannot be ruled out** | Met everything checkable, but a deciding value was never recorded |
+| Excluded | Ruled out by evidence that *is* recorded |
+
+Unresolved sessions stay out of a saved cohort unless you pass
+`--include-unresolved`, and are labelled if you do.
+
+**An empty result explains itself** rather than returning nothing. It names the
+constraint that eliminated the most sessions, and distinguishes "your query was
+too narrow" from "this column was never filled in" — which need opposite fixes.
+
+Cohorts are frozen with the full query plan against
+[`schemas/cohort.schema.json`](schemas/cohort.schema.json), including counts of
+what was excluded and what could not be decided, so a selection can be re-run,
+audited, or disputed later.
+
 ### `ndos_scan.py` — read-only inventory
 
 Produces a versioned JSON manifest: every file with its path, size,
@@ -155,6 +191,9 @@ histology stored away from the recordings it validates.
 python3 tests/fixtures/make_messy_lab.py /tmp/messy-lab
 python3 ndos_report.py /tmp/messy-lab
 python3 ndos_table.py export /tmp/messy-lab -o /tmp/sessions.csv
+# fill in a few rows, then:
+python3 ndos_table.py check /tmp/sessions.csv --emit /tmp/metadata.json
+python3 ndos_query.py /tmp/metadata.json -w species=mouse -w sex=F
 ```
 
 ---
@@ -177,6 +216,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_scan.py` | Read-only inventory |
 | `ndos_report.py` | Inventory report |
 | `ndos_table.py` | Spreadsheet metadata round-trip |
+| `ndos_query.py` | Cohort queries with evidence citation |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
