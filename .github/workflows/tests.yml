@@ -1,0 +1,74 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # NDOS Core is standard library only, by design: a lab should be able to
+      # run it on an acquisition machine without an install step. jsonschema is
+      # a test-only dependency used to check manifests against the published
+      # schema; the suite skips those checks if it is absent.
+      - name: Install test-only dependencies
+        run: python -m pip install --upgrade pip jsonschema
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  no-runtime-dependencies:
+    name: verify stdlib-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Deliberately no pip install: the modules must import and run against a
+      # bare interpreter. If this job fails, a dependency crept in.
+      - name: Import and run every module with no packages installed
+        run: |
+          python -c "import ndos_scan, ndos_init, ndos_report"
+          python ndos_scan.py --help
+          python ndos_init.py --help
+          python ndos_report.py --help
+
+      - name: End-to-end run on the synthetic fixture
+        run: |
+          python tests/fixtures/make_messy_lab.py /tmp/messy-lab --force
+          python ndos_scan.py /tmp/messy-lab --output /tmp/manifest.json
+          python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
+          cat /tmp/report.md
+
+  schema:
+    name: validate schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip check-jsonschema
+      - name: Check every schema is itself a valid JSON Schema
+        run: check-jsonschema --check-metaschema schemas/*.json

@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# NDOS working output
+manifest.json
+*.manifest.json
+report.md
+
+# Scratch data from the legacy Miniscope prototype; not part of NDOS Core
+test_dir/
