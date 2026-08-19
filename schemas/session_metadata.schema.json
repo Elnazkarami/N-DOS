@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ndos.dev/schemas/session-metadata/0.1",
+  "title": "NDOS Session Metadata",
+  "description": "Validated metadata for candidate sessions, produced from a reviewed spreadsheet. Every value records how it is known: observed from the filesystem, or declared by a person. Values nobody has supplied are absent rather than empty, so 'not yet entered' is never confused with 'checked and unknown'.",
+  "type": "object",
+  "required": ["metadata_version", "generated_at", "generator", "session_count", "sessions"],
+  "properties": {
+    "metadata_version": { "const": "0.1" },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "session_count": { "type": "integer", "minimum": 0 },
+    "sessions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/session" }
+    },
+    "extensions": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "session": {
+      "type": "object",
+      "required": ["ndos_id", "observed", "declared"],
+      "properties": {
+        "ndos_id": {
+          "description": "Stable identifier derived from the group's path. Renaming a directory currently yields a new identifier.",
+          "type": "string",
+          "pattern": "^ndos-[a-f0-9]{10}$"
+        },
+        "observed": { "$ref": "#/$defs/observed" },
+        "declared": { "$ref": "#/$defs/declared" },
+        "extensions": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "observed": {
+      "description": "Facts read from the filesystem. Never entered by hand, and refreshed on every scan.",
+      "type": "object",
+      "required": ["path", "file_count", "bytes"],
+      "properties": {
+        "path": { "type": "string" },
+        "folder_subject": { "type": "string" },
+        "folder_session": { "type": "string" },
+        "match": {
+          "description": "How well the folder names fit the shapes expected of a session. An inference, not a conclusion.",
+          "type": "string",
+          "enum": ["subject and session", "subject only", "session only", "no pattern match"]
+        },
+        "file_count": { "type": "integer", "minimum": 0 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "modalities": { "type": "array", "items": { "type": "string" } },
+        "earliest": { "type": "string" },
+        "latest": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "declared": {
+      "description": "Values supplied by a person. A field that is absent has not been filled in; a field with status 'unknown' was checked and could not be determined.",
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "subject_id", "species", "strain", "sex", "date_of_birth", "genotype",
+          "session_date", "session_type", "procedure", "target_region",
+          "construct_or_drug", "task", "qc_status", "notes"
+        ]
+      },
+      "additionalProperties": { "$ref": "#/$defs/field" }
+    },
+    "field": {
+      "type": "object",
+      "required": ["value", "status"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1 },
+        "status": {
+          "description": "'declared' is an assertion by a person; 'unknown' records that it was checked and cannot be determined.",
+          "type": "string",
+          "enum": ["declared", "unknown"]
+        },
+        "as_entered": {
+          "description": "The original text, present only when NDOS mapped it onto a controlled term, so the mapping can be audited.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
