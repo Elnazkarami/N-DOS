@@ -77,6 +77,42 @@ Inferred structure is always labelled as inference. NDOS distinguishes what it
 **observed**, what it **computed**, and what it **guessed**, and never presents
 one as another.
 
+### `ndos_table.py` — get lab metadata in, via the tool you already use
+
+Scanning reveals what is on disk. It cannot reveal which animal a recording
+came from, what was injected, or where. That knowledge lives in a notebook or
+an Excel sheet, so NDOS meets it there.
+
+```bash
+python3 ndos_table.py export manifest.json -o sessions.csv   # build the sheet
+# ... open sessions.csv in Excel and fill in the blanks ...
+python3 ndos_table.py check sessions.csv                     # validate it
+python3 ndos_table.py check sessions.csv --emit metadata.json
+```
+
+`export` groups files into candidate sessions and pre-fills everything NDOS
+could observe, so you edit rather than type from scratch. The
+`observed_match` column tells you which rows are worth your time: on the
+bundled fixture it identifies the 3 real sessions and correctly rejects the
+backup folder, the scratch directory, and the analysis scripts.
+
+**Re-exporting never destroys your typing.** Declared values are matched by a
+stable identifier and carried across, while observed columns refresh. If a row
+disappears between scans, you are told rather than silently losing the
+metadata attached to it.
+
+Entry is forgiving, validation is strict. `mouse`, `Mouse`, and `mice` all
+resolve to `mus musculus`; `ephys` resolves to `electrophysiology`; `female`
+to `F`. What you actually typed is preserved alongside the mapped value so the
+mapping can be audited. But `21/03/2025` is refused, because `03/04/2025`
+means 3 April in the UK and 4 March in the US and guessing would silently
+corrupt a date.
+
+A blank cell and the word `unknown` mean different things, and NDOS keeps them
+apart: blank means nobody has filled it in yet, `unknown` means somebody
+checked and could not determine it. `--emit` writes evidence-typed records
+against [`schemas/session_metadata.schema.json`](schemas/session_metadata.schema.json).
+
 ### `ndos_scan.py` — read-only inventory
 
 Produces a versioned JSON manifest: every file with its path, size,
@@ -118,6 +154,7 @@ histology stored away from the recordings it validates.
 ```bash
 python3 tests/fixtures/make_messy_lab.py /tmp/messy-lab
 python3 ndos_report.py /tmp/messy-lab
+python3 ndos_table.py export /tmp/messy-lab -o /tmp/sessions.csv
 ```
 
 ---
@@ -139,6 +176,7 @@ additionally validates generated manifests against the published schema.
 | --- | --- |
 | `ndos_scan.py` | Read-only inventory |
 | `ndos_report.py` | Inventory report |
+| `ndos_table.py` | Spreadsheet metadata round-trip |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

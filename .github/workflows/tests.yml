@@ -49,10 +49,11 @@ jobs:
       # bare interpreter. If this job fails, a dependency crept in.
       - name: Import and run every module with no packages installed
         run: |
-          python -c "import ndos_scan, ndos_init, ndos_report"
+          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
+          python ndos_table.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -60,6 +61,8 @@ jobs:
           python ndos_scan.py /tmp/messy-lab --output /tmp/manifest.json
           python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
           cat /tmp/report.md
+          python ndos_table.py export /tmp/manifest.json -o /tmp/sessions.csv
+          python ndos_table.py check /tmp/sessions.csv
 
   schema:
     name: validate schemas
