@@ -162,6 +162,45 @@ Cohorts are frozen with the full query plan against
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
+### `ndos_archive.py` — see inside archives without extracting them
+
+Labs zip their archives because the data is enormous. On a real lab drive,
+**88% to 100% of everything was inside `.zip` files**, which meant no
+inventory could describe any of it.
+
+This reads an archive's index rather than its contents, so a 300 GB collection
+can be catalogued without unpacking a byte:
+
+```bash
+python3 ndos_archive.py inspect /Volumes/archive -c archives.json
+python3 ndos_archive.py search archives.json '*.avi'
+```
+
+Listings are cached and keyed on size and modification time. That matters: on
+a slow external drive the first read of a 2 GB archive took nearly a minute,
+and nobody should pay that twice.
+
+**Extraction is planned, then confirmed, then done.** Ask for what you want,
+see exactly what it would write and what it would cost, and only then say yes:
+
+```bash
+python3 ndos_archive.py plan archives.json --dest ./work --name '*.avi'
+python3 ndos_archive.py extract archives.json --dest ./work --name '*.avi'
+```
+
+The plan reports how many files, how many bytes, which already exist, and
+whether there is enough free space — refusing to start if there is not.
+Nothing is written until you confirm.
+
+**Members that would escape the destination are refused.** An archive can
+contain `../../etc/something`, and unpacking one you did not create is a real
+way to get files written where you did not intend. Those members are listed
+under REFUSED and never extracted.
+
+`.tar` and `.tar.gz` need `--include-tar`, because unlike a zip they must be
+streamed end to end to be listed, which on slow storage is expensive enough to
+be a deliberate choice.
+
 ### `ndos_prov.py` — record what produced a result
 
 Provenance normally goes uncaptured because capturing it means instrumenting
@@ -278,6 +317,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_table.py` | Spreadsheet metadata round-trip |
 | `ndos_query.py` | Cohort queries with evidence citation |
 | `ndos_prov.py` | Run provenance and lineage tracing |
+| `ndos_archive.py` | Archive inspection and planned extraction |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

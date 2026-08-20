@@ -48,8 +48,15 @@ CATEGORIES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ),
     ("Standard neurodata containers", (".nwb", ".nix")),
     (
+        "Motion capture and tracking",
+        # .tak is OptiTrack Motive; the rest are common mocap interchange
+        # formats. Position tracking is core experimental data, not an extra.
+        (".tak", ".c3d", ".trc", ".anc", ".bvh", ".fbx", ".take"),
+    ),
+    (
         "Arrays and analysis outputs",
-        (".mat", ".npy", ".npz", ".h5", ".hdf5", ".pkl", ".pickle", ".parquet", ".feather"),
+        (".mat", ".npy", ".npz", ".h5", ".hdf", ".hdf4", ".hdf5", ".nc",
+         ".pkl", ".pickle", ".parquet", ".feather"),
     ),
     ("Tabular and behavioural", (".csv", ".tsv", ".xlsx", ".xls", ".ods", ".sav")),
     ("Notes and documents", (".txt", ".md", ".rst", ".doc", ".docx", ".pdf", ".rtf", ".odt")),
@@ -92,6 +99,8 @@ NAME_PATTERNS: Tuple[Tuple[str, str], ...] = (
     # keyword forms above, since `ses-01` also reads as letters-then-digits.
     ("animal or subject ID", r"^[A-Za-z]{1,4}[-_]?\d{2,6}[a-z]?$"),
     ("plain number", r"^\d{1,3}$"),
+    ("recovery output", r"^recup_dir\.\d+$"),
+    ("recovery output", r"^(recovered|recovery|carved|photorec|testdisk)[-_. ]?\d*$"),
 )
 
 #: Words that usually indicate what a folder holds rather than which subject.
@@ -352,13 +361,29 @@ def attention_flags(manifest: Dict[str, Any], duplicates: Sequence[Dict[str, Any
             }
         )
 
-    spaced = [entry for entry in files if " " in entry["path"]]
-    if spaced:
+    # Counting affected files rather than badly named things turns one
+    # awkward folder into thousands of reported problems.
+    spaced_files = sorted({entry["name"] for entry in files if " " in entry["name"]})
+    spaced_dirs = sorted(
+        {
+            part
+            for entry in files
+            for part in entry["path"].split("/")[:-1]
+            if " " in part
+        }
+    )
+    if spaced_files or spaced_dirs:
+        parts = []
+        if spaced_dirs:
+            parts.append(_plural(len(spaced_dirs), "directory", "directories"))
+        if spaced_files:
+            parts.append(_plural(len(spaced_files), "filename"))
         flags.append(
             {
                 "severity": "info",
-                "title": f"{_plural(len(spaced), 'path contains', 'paths contain')} spaces",
+                "title": f"{' and '.join(parts)} contain spaces",
                 "detail": "Not an error, but a frequent source of broken analysis scripts.",
+                "examples": (spaced_dirs + spaced_files)[:5],
             }
         )
 
@@ -370,6 +395,23 @@ def attention_flags(manifest: Dict[str, Any], duplicates: Sequence[Dict[str, Any
                 "title": f"{_plural(len(no_extension), 'file has', 'files have')} no extension",
                 "detail": "Format cannot be determined from the name alone; these need explicit annotation.",
                 "examples": [entry["path"] for entry in no_extension[:5]],
+            }
+        )
+
+    excluded = [
+        entry for entry in manifest.get("skipped", []) if entry["reason"] == "excluded"
+    ]
+    if excluded and len(excluded) > max(20, len(files) // 10):
+        flags.append(
+            {
+                "severity": "info",
+                "title": f"{_plural(len(excluded), 'file')} skipped as system clutter",
+                "detail": (
+                    "Resource forks, thumbnail caches and similar. Not counted "
+                    "above, because they are not data. Common on drives written "
+                    "by macOS or by recovery tools."
+                ),
+                "examples": [entry["path"] for entry in excluded[:3]],
             }
         )
 
