@@ -530,7 +530,8 @@ def render_text(report: Dict[str, Any]) -> str:
     add("-" * 72)
     for row in report["heaviest_directories"]:
         add(
-            f"  {_bytes(row['total_bytes']):>12}  {row['file_count']:>7,} files  "
+            f"  {_bytes(row['total_bytes']):>12}  "
+            f"{_plural(row['file_count'], 'file'):>12}  "
             f"{row['directory']}"
         )
 
