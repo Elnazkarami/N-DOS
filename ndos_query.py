@@ -46,7 +46,12 @@ OBSERVED_FIELDS = (
     "file_count", "bytes", "modalities", "earliest", "latest",
 )
 
-NUMERIC_FIELDS = ("file_count", "bytes")
+NUMERIC_FIELDS = ("file_count", "bytes", "age_days")
+
+#: Computed intervals such as days_since_injection. Named by pattern because
+#: the set depends on which procedure types a lab actually records.
+DERIVED_PREFIX = "days_since_"
+DERIVED_FIELDS = ("age_days",)
 LIST_FIELDS = ("modalities",)
 
 #: Longest first, so ">=" is not read as ">".
@@ -81,11 +86,27 @@ def parse_constraint(text: str) -> Dict[str, Any]:
 
         if field.startswith("observed."):
             field = field[len("observed.") :]
-        if field not in ndos_table.DECLARED_COLUMNS and field not in OBSERVED_FIELDS:
-            known = ", ".join(sorted(ndos_table.DECLARED_COLUMNS + OBSERVED_FIELDS))
-            raise QueryError(f"unknown field {field!r}. Available fields: {known}")
 
-        declared = field in ndos_table.DECLARED_COLUMNS
+        entity_fields = (
+            ndos_table.SESSION_DECLARED_COLUMNS
+            + ndos_table.ANIMAL_COLUMNS
+            + ndos_table.PROCEDURE_COLUMNS
+        )
+        is_derived = field in DERIVED_FIELDS or field.startswith(DERIVED_PREFIX)
+        if field not in entity_fields and field not in OBSERVED_FIELDS and not is_derived:
+            known = ", ".join(sorted(set(entity_fields + OBSERVED_FIELDS)))
+            raise QueryError(
+                f"unknown field {field!r}. Available fields: {known}, "
+                f"plus age_days and {DERIVED_PREFIX}<procedure type>"
+            )
+
+        if is_derived:
+            source = "computed"
+        elif field in OBSERVED_FIELDS:
+            source = "observed"
+        else:
+            source = "declared"
+        declared = source == "declared"
         # Normalise the query the same way the data was normalised, so that
         # `species=mouse` finds sessions recorded as `mus musculus`.
         resolved = ndos_table.normalise(field, value) if declared and value else value
@@ -96,7 +117,7 @@ def parse_constraint(text: str) -> Dict[str, Any]:
             "value": resolved,
             "as_typed": text,
             "resolved_from": value if resolved != value else None,
-            "source": "declared" if declared else "observed",
+            "source": source,
         }
 
     raise QueryError(
@@ -113,8 +134,30 @@ def _observed_value(session: Dict[str, Any], field: str) -> Any:
     return session.get("observed", {}).get(field)
 
 
-def _declared_entry(session: Dict[str, Any], field: str) -> Optional[Dict[str, Any]]:
-    return session.get("declared", {}).get(field)
+def _declared_entries(session: Dict[str, Any], field: str) -> List[Dict[str, Any]]:
+    """Every recorded value for a field, across the entities a session links to.
+
+    A session carries its own facts, inherits its animal's, and is governed by
+    its procedures. A question about target_region is answered by the
+    procedures; one about sex, by the animal. Callers should not have to know
+    which, so all three are searched and any match counts.
+    """
+    entries: List[Dict[str, Any]] = []
+    own = session.get("declared", {}).get(field)
+    if own:
+        entries.append(own)
+    animal = session.get("animal", {}).get("declared", {}).get(field)
+    if animal:
+        entries.append(animal)
+    for procedure in session.get("procedures", []):
+        value = procedure.get("declared", {}).get(field)
+        if value:
+            entries.append(value)
+    return entries
+
+
+def _derived_entry(session: Dict[str, Any], field: str) -> Optional[Dict[str, Any]]:
+    return session.get("derived", {}).get(field)
 
 
 def _matching_items(actual: Any, expected: str, operator: str) -> List[str]:
@@ -124,6 +167,15 @@ def _matching_items(actual: Any, expected: str, operator: str) -> List[str]:
     if operator == "~":
         return [str(item) for item in items if needle in str(item).lower()]
     return [str(item) for item in items if str(item).lower() == needle]
+
+
+def _is_numeric_field(field: str) -> bool:
+    """Whether a field must be compared as a number rather than as text.
+
+    Computed intervals are the trap here: as strings, "7" sorts after "21",
+    so a day-count range would silently return the wrong sessions.
+    """
+    return field in NUMERIC_FIELDS or field.startswith(DERIVED_PREFIX)
 
 
 def _compare(operator: str, actual: Any, expected: str, field: str) -> bool:
@@ -138,7 +190,7 @@ def _compare(operator: str, actual: Any, expected: str, field: str) -> bool:
             return expected.lower() not in lowered
         raise QueryError(f"{operator!r} cannot be used on {field!r}")
 
-    if field in NUMERIC_FIELDS:
+    if _is_numeric_field(field):
         try:
             left, right = float(actual), float(expected)
         except (TypeError, ValueError):
@@ -186,30 +238,66 @@ def evaluate(session: Dict[str, Any], constraint: Dict[str, Any]) -> Tuple[str, 
             shown = _matching_items(actual, constraint["value"], operator)
         return outcome, {"field": field, "value": shown, "status": "observed"}
 
-    entry = _declared_entry(session, field)
-    if entry is None:
+    if constraint["source"] == "computed":
+        entry = _derived_entry(session, field)
+        if entry is None:
+            return UNRECORDED, {
+                "field": field,
+                "reason": (
+                    "not computed; needs a dated procedure of that type and a "
+                    "session date"
+                ),
+            }
+        if operator == "present":
+            return MATCH, {"field": field, "value": entry["value"], "status": "computed"}
+        if operator == "unknown":
+            return FAIL, {"field": field, "reason": "computed values are never 'unknown'"}
+        outcome = (
+            MATCH if _compare(operator, entry["value"], constraint["value"], field)
+            else FAIL
+        )
+        return outcome, {"field": field, "value": entry["value"], "status": "computed"}
+
+    entries = _declared_entries(session, field)
+    if not entries:
         # Nobody has filled this in. That is not evidence against the session.
         return UNRECORDED, {"field": field, "reason": "never entered"}
 
-    status = entry.get("status", "declared")
-    if status == "unknown":
-        if operator == "unknown":
-            return MATCH, {"field": field, "value": "unknown", "status": "unknown"}
+    # A field can be recorded more than once across the linked entities: an
+    # animal with two injections has two target regions. Any one satisfying
+    # the constraint satisfies it.
+    if operator == "unknown":
+        for entry in entries:
+            if entry.get("status") == "unknown":
+                return MATCH, {"field": field, "value": "unknown", "status": "unknown"}
+        return FAIL, {"field": field, "value": entries[0]["value"], "status": "declared"}
+
+    known = [entry for entry in entries if entry.get("status") != "unknown"]
+    if not known:
         return UNRECORDED, {
             "field": field,
             "reason": "recorded as unknown; checked but could not be determined",
         }
 
-    if operator == "unknown":
-        return FAIL, {"field": field, "value": entry["value"], "status": status}
     if operator == "present":
-        return MATCH, {"field": field, "value": entry["value"], "status": status}
+        return MATCH, {"field": field, "value": known[0]["value"], "status": "declared"}
 
-    outcome = MATCH if _compare(operator, entry["value"], constraint["value"], field) else FAIL
-    detail = {"field": field, "value": entry["value"], "status": status}
-    if "as_entered" in entry:
-        detail["as_entered"] = entry["as_entered"]
-    return outcome, detail
+    for entry in known:
+        if _compare(operator, entry["value"], constraint["value"], field):
+            detail = {
+                "field": field,
+                "value": entry["value"],
+                "status": entry.get("status", "declared"),
+            }
+            if "as_entered" in entry:
+                detail["as_entered"] = entry["as_entered"]
+            return MATCH, detail
+
+    return FAIL, {
+        "field": field,
+        "value": ", ".join(entry["value"] for entry in known),
+        "status": "declared",
+    }
 
 
 def run_query(
@@ -411,7 +499,12 @@ def render(result: Dict[str, Any], verbose: bool = False) -> str:
     add("-" * 72)
     for row in result["matched"]:
         add(f"  {row['ndos_id']}  {row['path']}")
+        seen = set()
         for item in row["evidence"]:
+            key = (item["field"], str(item.get("value")), item.get("status"))
+            if key in seen:
+                continue
+            seen.add(key)
             entered = (
                 f" [entered as '{item['as_entered']}']" if "as_entered" in item else ""
             )

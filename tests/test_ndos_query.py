@@ -312,3 +312,115 @@ class RenderingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EntityResolutionTests(unittest.TestCase):
+    """A question should not require knowing which table holds the answer."""
+
+    def _linked(self, **kwargs):
+        session = {
+            "ndos_id": "ndos-0000000001",
+            "observed": {"path": "p", "file_count": 1, "bytes": 1, "modalities": []},
+            "declared": {"subject_id": {"value": "M01", "status": "declared"}},
+        }
+        session.update(kwargs)
+        return {"metadata_version": "0.1", "session_count": 1, "sessions": [session]}
+
+    def test_animal_fields_are_found_from_the_session(self):
+        metadata = self._linked(
+            animal={
+                "subject_id": "M01",
+                "declared": {"sex": {"value": "F", "status": "declared"}},
+            }
+        )
+        result = run_query(metadata, [parse_constraint("sex=F")])
+        self.assertEqual(result["counts"]["matched"], 1)
+
+    def test_procedure_fields_are_found_from_the_session(self):
+        metadata = self._linked(
+            procedures=[
+                {
+                    "procedure_id": "P1",
+                    "declared": {"target_region": {"value": "CA1", "status": "declared"}},
+                }
+            ]
+        )
+        result = run_query(metadata, [parse_constraint("target_region=CA1")])
+        self.assertEqual(result["counts"]["matched"], 1)
+
+    def test_any_one_of_several_procedures_can_satisfy_a_constraint(self):
+        # An animal with two injections has two target regions; asking for
+        # either should find it.
+        metadata = self._linked(
+            procedures=[
+                {"procedure_id": "P1",
+                 "declared": {"target_region": {"value": "CA3", "status": "declared"}}},
+                {"procedure_id": "P2",
+                 "declared": {"target_region": {"value": "CA1", "status": "declared"}}},
+            ]
+        )
+        result = run_query(metadata, [parse_constraint("target_region=CA1")])
+        self.assertEqual(result["counts"]["matched"], 1)
+
+    def test_a_session_with_no_animal_row_is_unresolved_not_excluded(self):
+        result = run_query(self._linked(), [parse_constraint("sex=F")])
+        self.assertEqual(result["counts"]["unresolved"], 1)
+        self.assertEqual(result["counts"]["excluded"], 0)
+
+
+class DerivedIntervalTests(unittest.TestCase):
+    def _with_interval(self, days):
+        return {
+            "metadata_version": "0.1",
+            "session_count": 1,
+            "sessions": [
+                {
+                    "ndos_id": "ndos-0000000001",
+                    "observed": {"path": "p", "file_count": 1, "bytes": 1, "modalities": []},
+                    "declared": {},
+                    "derived": {
+                        "days_since_injection": {"value": str(days), "status": "computed"}
+                    },
+                }
+            ],
+        }
+
+    def test_intervals_compare_as_numbers_not_strings(self):
+        # As text, "7" sorts after "21"; a day range must not be fooled.
+        early = run_query(
+            self._with_interval(7), [parse_constraint("days_since_injection>=21")]
+        )
+        self.assertEqual(early["counts"]["excluded"], 1)
+
+        late = run_query(
+            self._with_interval(28), [parse_constraint("days_since_injection>=21")]
+        )
+        self.assertEqual(late["counts"]["matched"], 1)
+
+    def test_a_range_selects_the_intended_window(self):
+        constraints = [
+            parse_constraint("days_since_injection>=21"),
+            parse_constraint("days_since_injection<=35"),
+        ]
+        self.assertEqual(run_query(self._with_interval(28), constraints)["counts"]["matched"], 1)
+        self.assertEqual(run_query(self._with_interval(60), constraints)["counts"]["excluded"], 1)
+
+    def test_an_uncomputed_interval_is_unresolved_and_explains_why(self):
+        metadata = {
+            "metadata_version": "0.1",
+            "session_count": 1,
+            "sessions": [{
+                "ndos_id": "ndos-0000000001",
+                "observed": {"path": "p", "file_count": 1, "bytes": 1, "modalities": []},
+                "declared": {},
+            }],
+        }
+        result = run_query(metadata, [parse_constraint("days_since_injection>=21")])
+
+        self.assertEqual(result["counts"]["unresolved"], 1)
+        self.assertIn("not computed", result["unresolved"][0]["missing"][0]["reason"])
+
+    def test_the_query_plan_marks_intervals_as_computed(self):
+        constraint = parse_constraint("days_since_surgery>=14")
+        self.assertEqual(constraint["source"], "computed")
+        self.assertEqual(parse_constraint("age_days>=60")["source"], "computed")

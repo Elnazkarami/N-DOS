@@ -52,25 +52,52 @@ OBSERVED_COLUMNS = (
     "observed_latest",
 )
 
-#: Columns only a person can fill. Always preserved across re-export.
-DECLARED_COLUMNS = (
+#: Facts about an animal, recorded once no matter how many times it is
+#: recorded from. Keyed by subject_id.
+ANIMAL_COLUMNS = (
     "subject_id",
     "species",
     "strain",
     "sex",
     "date_of_birth",
     "genotype",
-    "session_date",
-    "session_type",
-    "procedure",
+    "source",
+    "notes",
+)
+
+#: Things done to an animal: surgery, injection, implant, drug, training. One
+#: procedure typically governs many later sessions, which is why it cannot live
+#: on the session row.
+PROCEDURE_COLUMNS = (
+    "procedure_id",
+    "subject_id",
+    "procedure_date",
+    "procedure_type",
     "target_region",
     "construct_or_drug",
+    "dose",
+    "notes",
+)
+
+#: Facts true of one recording session only.
+SESSION_DECLARED_COLUMNS = (
+    "subject_id",
+    "session_date",
+    "session_type",
     "task",
     "qc_status",
     "notes",
 )
 
-COLUMNS = OBSERVED_COLUMNS + DECLARED_COLUMNS
+#: Retained for the session table's own validation and merge logic.
+DECLARED_COLUMNS = SESSION_DECLARED_COLUMNS
+
+COLUMNS = OBSERVED_COLUMNS + SESSION_DECLARED_COLUMNS
+
+#: Filenames within a metadata directory.
+ANIMALS_FILE = "animals.csv"
+PROCEDURES_FILE = "procedures.csv"
+SESSIONS_FILE = "sessions.csv"
 
 #: How well a group's folder names fit the shapes NDOS expects of a session.
 #: Grouping a messy tree always produces rows that are not sessions at all, so
@@ -95,6 +122,10 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
         "surgery", "training", "other", "unknown",
     ),
     "qc_status": ("pass", "fail", "review", "unknown"),
+    "procedure_type": (
+        "surgery", "injection", "implant", "lesion", "drug", "stimulation",
+        "training", "perfusion", "other", "unknown",
+    ),
 }
 
 #: Common ways labs write a species. Mapped rather than rejected, because
@@ -116,6 +147,22 @@ SPECIES_SYNONYMS: Dict[str, str] = {
 
 #: Lab shorthand for modalities. Same reasoning as the species map: people
 #: write "ephys", and a tool that rejects it will simply not get used.
+PROCEDURE_TYPE_SYNONYMS: Dict[str, str] = {
+    "viral injection": "injection",
+    "virus injection": "injection",
+    "aav": "injection",
+    "craniotomy": "surgery",
+    "probe implant": "implant",
+    "electrode implant": "implant",
+    "cannula": "implant",
+    "headplate": "implant",
+    "headbar": "implant",
+    "ip injection": "drug",
+    "i.p.": "drug",
+    "perfusion/fixation": "perfusion",
+    "transcardial perfusion": "perfusion",
+}
+
 SESSION_TYPE_SYNONYMS: Dict[str, str] = {
     "ephys": "electrophysiology",
     "e-phys": "electrophysiology",
@@ -142,9 +189,12 @@ SEX_SYNONYMS: Dict[str, str] = {
     "unk": "unknown", "n/a": "unknown", "na": "unknown", "?": "unknown",
 }
 
-REQUIRED_FOR_COMPLETE = ("subject_id", "species", "sex", "session_date")
+#: A session row is usable when it can be tied to an animal and placed in
+#: time. Species and sex now live on the animal, and are checked there.
+REQUIRED_FOR_COMPLETE = ("subject_id", "session_date")
+REQUIRED_ANIMAL_FIELDS = ("species", "sex")
 
-DATE_COLUMNS = ("date_of_birth", "session_date")
+DATE_COLUMNS = ("date_of_birth", "session_date", "procedure_date")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SLASH_DATE = re.compile(r"^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$")
 
@@ -313,14 +363,89 @@ def merge_declared(
     return rows, stats
 
 
-def write_table(rows: Sequence[Dict[str, Any]], path: Path) -> None:
-    """Write the table as UTF-8 CSV with a BOM, so Excel opens it correctly."""
+def write_table(
+    rows: Sequence[Dict[str, Any]],
+    path: Path,
+    columns: Sequence[str] = COLUMNS,
+) -> None:
+    """Write a table as UTF-8 CSV with a BOM, so Excel opens it correctly."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(COLUMNS))
+        writer = csv.DictWriter(stream, fieldnames=list(columns))
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: _escape(row.get(key, "")) for key in COLUMNS})
+            writer.writerow({key: _escape(row.get(key, "")) for key in columns})
+
+
+def seed_animals(session_rows: Sequence[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Propose one animal row per distinct subject folder name observed.
+
+    Only groups whose folder names actually looked like a subject are used;
+    seeding a row for every scratch directory would bury the real animals.
+    """
+    names: List[str] = []
+    for row in session_rows:
+        if row.get("observed_match") not in (MATCH_BOTH, MATCH_SUBJECT):
+            continue
+        name = str(row.get("observed_folder_subject") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return [{"subject_id": name} for name in sorted(names, key=str.lower)]
+
+
+def export_metadata(
+    manifest: Dict[str, Any],
+    directory: Path,
+    group_depth: Optional[int] = None,
+    subject_depth: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Write (or refresh) the three linked metadata tables.
+
+    Sessions are regenerated so observed columns stay current, with entered
+    values carried across. Animals are merged, gaining rows for newly seen
+    subjects. Procedures are never rewritten: NDOS cannot observe a surgery,
+    so that file belongs entirely to the person keeping it.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    sessions_path = directory / SESSIONS_FILE
+    animals_path = directory / ANIMALS_FILE
+    procedures_path = directory / PROCEDURES_FILE
+
+    sessions = group_sessions(
+        manifest, group_depth=group_depth, subject_depth=subject_depth
+    )
+    stats = {"matched": 0, "carried_values": 0, "orphaned": 0}
+    if sessions_path.exists():
+        sessions, stats = merge_declared(sessions, read_table(sessions_path))
+    write_table(sessions, sessions_path)
+
+    proposed = seed_animals(sessions)
+    existing_animals = read_table(animals_path) if animals_path.exists() else []
+    by_id = {
+        (row.get("subject_id") or "").strip(): row
+        for row in existing_animals
+        if (row.get("subject_id") or "").strip()
+    }
+    added = 0
+    for candidate in proposed:
+        if candidate["subject_id"] not in by_id:
+            by_id[candidate["subject_id"]] = candidate
+            added += 1
+    animals = sorted(by_id.values(), key=lambda r: str(r.get("subject_id", "")).lower())
+    write_table(animals, animals_path, ANIMAL_COLUMNS)
+
+    procedures_created = not procedures_path.exists()
+    if procedures_created:
+        write_table([], procedures_path, PROCEDURE_COLUMNS)
+
+    return {
+        "directory": directory,
+        "sessions": len(sessions),
+        "animals": len(animals),
+        "animals_added": added,
+        "procedures_created": procedures_created,
+        "merge": stats,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -339,6 +464,9 @@ def normalise(column: str, value: str) -> str:
     if column == "session_type":
         lowered = text.lower()
         return SESSION_TYPE_SYNONYMS.get(lowered, lowered)
+    if column == "procedure_type":
+        lowered = text.lower()
+        return PROCEDURE_TYPE_SYNONYMS.get(lowered, lowered)
     if column == "qc_status":
         return text.lower()
     return text
@@ -433,6 +561,160 @@ def check_table(rows: Sequence[Dict[str, str]]) -> Dict[str, Any]:
     }
 
 
+def _days_between(earlier: str, later: str) -> Optional[int]:
+    """Whole days from one ISO date to another, or None if either is unusable."""
+    try:
+        start = datetime.strptime(earlier, "%Y-%m-%d")
+        end = datetime.strptime(later, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+    return (end - start).days
+
+
+def check_metadata(directory: Path) -> Dict[str, Any]:
+    """Validate the three tables together, including references between them.
+
+    Validating each file alone would miss the errors that actually matter: a
+    session naming an animal that has no row, or a procedure recorded against
+    a subject nobody has described.
+    """
+    sessions = read_table(directory / SESSIONS_FILE)
+    animals = (
+        read_table(directory / ANIMALS_FILE)
+        if (directory / ANIMALS_FILE).exists() else []
+    )
+    procedures = (
+        read_table(directory / PROCEDURES_FILE)
+        if (directory / PROCEDURES_FILE).exists() else []
+    )
+
+    result = check_table(sessions)
+    result["animals"] = _check_entity(animals, ANIMAL_COLUMNS, "subject_id", ANIMALS_FILE)
+    result["procedures"] = _check_entity(
+        procedures, PROCEDURE_COLUMNS, "procedure_id", PROCEDURES_FILE
+    )
+
+    known = {
+        _cell(row, "subject_id") for row in animals if _cell(row, "subject_id")
+    }
+    references: List[Dict[str, Any]] = []
+
+    for index, row in enumerate(sessions, start=2):
+        subject = _cell(row, "subject_id")
+        if subject and subject not in known:
+            references.append(
+                {
+                    "file": SESSIONS_FILE,
+                    "line": index,
+                    "message": (
+                        f"session names subject {subject!r}, which has no row in "
+                        f"{ANIMALS_FILE}"
+                    ),
+                }
+            )
+
+    for index, row in enumerate(procedures, start=2):
+        subject = _cell(row, "subject_id")
+        if not subject:
+            references.append(
+                {
+                    "file": PROCEDURES_FILE,
+                    "line": index,
+                    "message": "procedure has no subject_id, so it cannot be linked to an animal",
+                }
+            )
+        elif subject not in known:
+            references.append(
+                {
+                    "file": PROCEDURES_FILE,
+                    "line": index,
+                    "message": (
+                        f"procedure names subject {subject!r}, which has no row in "
+                        f"{ANIMALS_FILE}"
+                    ),
+                }
+            )
+
+    result["references"] = references
+    result["counts"] = {
+        "animals": len(animals),
+        "procedures": len(procedures),
+        "sessions": len(sessions),
+    }
+    return result
+
+
+def _check_entity(
+    rows: Sequence[Dict[str, str]],
+    columns: Sequence[str],
+    key: str,
+    filename: str,
+) -> Dict[str, Any]:
+    """Validate one entity table's own values and key uniqueness."""
+    problems: List[Dict[str, Any]] = []
+    seen: Dict[str, int] = {}
+    filled: Counter = Counter()
+
+    for index, row in enumerate(rows, start=2):
+        identifier = _cell(row, key)
+        if identifier:
+            if identifier in seen:
+                problems.append(
+                    {
+                        "file": filename,
+                        "line": index,
+                        "column": key,
+                        "value": identifier,
+                        "message": f"duplicate, first seen on line {seen[identifier]}",
+                    }
+                )
+            else:
+                seen[identifier] = index
+
+        for column in columns:
+            raw = _cell(row, column)
+            if not raw:
+                continue
+            filled[column] += 1
+            value = normalise(column, raw)
+
+            vocabulary = VOCABULARIES.get(column)
+            if vocabulary and value not in vocabulary:
+                problems.append(
+                    {
+                        "file": filename,
+                        "line": index,
+                        "column": column,
+                        "value": raw,
+                        "message": f"expected one of {', '.join(vocabulary)}",
+                    }
+                )
+            if column in DATE_COLUMNS and not ISO_DATE.match(value):
+                message = (
+                    "ambiguous date: 03/04/2025 means 3 April in the UK and 4 "
+                    "March in the US, so NDOS will not guess. Write it as "
+                    "YYYY-MM-DD"
+                    if SLASH_DATE.match(value)
+                    else "dates must be written as YYYY-MM-DD"
+                )
+                problems.append(
+                    {
+                        "file": filename,
+                        "line": index,
+                        "column": column,
+                        "value": raw,
+                        "message": message,
+                    }
+                )
+
+    return {
+        "file": filename,
+        "row_count": len(rows),
+        "problems": problems,
+        "filled": dict(filled),
+    }
+
+
 def render_check(result: Dict[str, Any]) -> str:
     out: List[str] = []
     add = out.append
@@ -441,7 +723,13 @@ def render_check(result: Dict[str, Any]) -> str:
     add("=" * 72)
     add("NDOS METADATA CHECK")
     add("=" * 72)
-    add(f"Rows            : {total}")
+    tables = result.get("counts") or {}
+    if "animals" in tables:
+        add(
+            f"Tables          : {tables['animals']} animals, "
+            f"{tables['procedures']} procedures, {tables['sessions']} sessions"
+        )
+    add(f"Session rows    : {total}")
     add(
         f"Ready to use    : {result['complete_rows']} "
         f"({(100 * result['complete_rows'] / total) if total else 0:.0f}%)"
@@ -471,16 +759,37 @@ def render_check(result: Dict[str, Any]) -> str:
             f"{marker}{note}"
         )
 
-    if result["problems"]:
+    entity_problems = []
+    for key in ("animals", "procedures"):
+        entity = result.get(key)
+        if entity:
+            entity_problems += entity["problems"]
+
+    if result["problems"] or entity_problems:
         add("")
         add("-" * 72)
         add("PROBLEMS")
         add("-" * 72)
         for problem in result["problems"]:
             add(
-                f"  line {problem['line']:<5} {problem['column']:<18} "
-                f"{problem['value']!r}"
+                f"  {SESSIONS_FILE} line {problem['line']:<4} "
+                f"{problem['column']:<18} {problem['value']!r}"
             )
+            add(f"        {problem['message']}")
+        for problem in entity_problems:
+            add(
+                f"  {problem['file']} line {problem['line']:<4} "
+                f"{problem['column']:<18} {problem['value']!r}"
+            )
+            add(f"        {problem['message']}")
+
+    if result.get("references"):
+        add("")
+        add("-" * 72)
+        add("BROKEN LINKS BETWEEN TABLES")
+        add("-" * 72)
+        for problem in result["references"]:
+            add(f"  {problem['file']} line {problem['line']}")
             add(f"        {problem['message']}")
 
     add("")
@@ -500,34 +809,54 @@ METADATA_VERSION = "0.1"
 OBSERVED_NUMERIC = ("observed_file_count", "observed_bytes")
 
 
-def to_records(
-    rows: Sequence[Dict[str, Any]], include_empty: bool = False
-) -> Dict[str, Any]:
-    """Convert a filled table into validated, evidence-typed session records.
+def _typed_fields(row: Dict[str, Any], columns: Sequence[str]) -> Dict[str, Any]:
+    """Evidence-typed values for one row, omitting anything not filled in."""
+    fields: Dict[str, Any] = {}
+    for column in columns:
+        raw = _cell(row, column)
+        if not raw:
+            continue
+        value = normalise(column, raw)
+        field: Dict[str, Any] = {
+            "value": value,
+            "status": "unknown" if value == "unknown" else "declared",
+        }
+        if value != raw:
+            field["as_entered"] = raw
+        fields[column] = field
+    return fields
 
-    Every declared value carries how it is known. NDOS distinguishes three
-    states that are routinely conflated: a value somebody asserted, a value
-    somebody checked and could not determine, and a value nobody has looked at
-    yet. Only the first two appear here; the third is simply absent.
+
+def link_records(directory: Path, include_empty: bool = False) -> Dict[str, Any]:
+    """Join sessions to their animal and to the procedures that preceded them.
+
+    This is what the flat table could not express: a surgery happens once and
+    governs every session after it. Intervals are computed here rather than
+    typed by hand, and are labelled 'computed' so they are never mistaken for
+    something a person asserted.
     """
-    sessions = []
-    for row in rows:
-        declared: Dict[str, Any] = {}
-        for column in DECLARED_COLUMNS:
-            raw = _cell(row, column)
-            if not raw:
-                continue  # nobody has filled this in; absence is the record
-            value = normalise(column, raw)
-            field: Dict[str, Any] = {
-                "value": value,
-                "status": "unknown" if value == "unknown" else "declared",
-            }
-            if value != raw:
-                # Keep what the person actually typed, so a mapping can be
-                # audited or disputed later.
-                field["as_entered"] = raw
-            declared[column] = field
+    sessions = read_table(directory / SESSIONS_FILE)
+    animals = (
+        read_table(directory / ANIMALS_FILE)
+        if (directory / ANIMALS_FILE).exists() else []
+    )
+    procedures = (
+        read_table(directory / PROCEDURES_FILE)
+        if (directory / PROCEDURES_FILE).exists() else []
+    )
 
+    by_subject = {
+        _cell(row, "subject_id"): row for row in animals if _cell(row, "subject_id")
+    }
+    procedures_by_subject: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    for row in procedures:
+        subject = _cell(row, "subject_id")
+        if subject:
+            procedures_by_subject[subject].append(row)
+
+    records = []
+    for row in sessions:
+        declared = _typed_fields(row, SESSION_DECLARED_COLUMNS)
         if not declared and not include_empty:
             continue
 
@@ -536,31 +865,79 @@ def to_records(
             if column == "ndos_id":
                 continue
             raw = _cell(row, column)
+            name = column[len("observed_") :]
             if column in OBSERVED_NUMERIC:
-                observed[column[len("observed_") :]] = int(raw) if raw.isdigit() else 0
+                observed[name] = int(raw) if raw.isdigit() else 0
             elif column == "observed_modalities":
                 observed["modalities"] = [
                     part.strip() for part in raw.split(";") if part.strip()
                 ]
             else:
-                observed[column[len("observed_") :]] = raw
+                observed[name] = raw
 
-        sessions.append(
-            {
-                "ndos_id": _cell(row, "ndos_id"),
-                "observed": observed,
-                "declared": declared,
+        subject = _cell(row, "subject_id")
+        session_date = normalise("session_date", _cell(row, "session_date"))
+        derived: Dict[str, Any] = {}
+
+        animal_record = None
+        animal_row = by_subject.get(subject)
+        if animal_row is not None:
+            animal_record = {
+                "subject_id": subject,
+                "declared": _typed_fields(animal_row, ANIMAL_COLUMNS),
             }
-        )
+            birth = normalise("date_of_birth", _cell(animal_row, "date_of_birth"))
+            age = _days_between(birth, session_date) if birth and session_date else None
+            if age is not None and age >= 0:
+                derived["age_days"] = {"value": str(age), "status": "computed"}
+
+        linked_procedures = []
+        for procedure_row in procedures_by_subject.get(subject, []):
+            procedure_date = normalise(
+                "procedure_date", _cell(procedure_row, "procedure_date")
+            )
+            interval = (
+                _days_between(procedure_date, session_date)
+                if procedure_date and session_date else None
+            )
+            entry: Dict[str, Any] = {
+                "procedure_id": _cell(procedure_row, "procedure_id"),
+                "declared": _typed_fields(procedure_row, PROCEDURE_COLUMNS),
+            }
+            if interval is not None:
+                entry["days_before_session"] = interval
+                entry["relation"] = "before" if interval >= 0 else "after"
+            linked_procedures.append(entry)
+
+            # Expose the most recent preceding procedure of each type as a
+            # queryable interval, which is how questions are actually asked:
+            # "recorded three to five weeks after the injection".
+            kind = normalise("procedure_type", _cell(procedure_row, "procedure_type"))
+            if kind and interval is not None and interval >= 0:
+                key = f"days_since_{kind.replace(' ', '_')}"
+                current = derived.get(key)
+                if current is None or interval < int(current["value"]):
+                    derived[key] = {"value": str(interval), "status": "computed"}
+
+        record = {
+            "ndos_id": _cell(row, "ndos_id"),
+            "observed": observed,
+            "declared": declared,
+        }
+        if animal_record:
+            record["animal"] = animal_record
+        if linked_procedures:
+            record["procedures"] = linked_procedures
+        if derived:
+            record["derived"] = derived
+        records.append(record)
 
     return {
         "metadata_version": METADATA_VERSION,
-        "generated_at": ndos_scan._utc_iso(
-            datetime.now(tz=timezone.utc).timestamp()
-        ),
+        "generated_at": ndos_scan._utc_iso(datetime.now(tz=timezone.utc).timestamp()),
         "generator": {"name": "ndos-table", "version": TABLE_VERSION},
-        "session_count": len(sessions),
-        "sessions": sessions,
+        "session_count": len(records),
+        "sessions": records,
     }
 
 
@@ -578,50 +955,56 @@ def _load_manifest(path: Path, quiet: bool) -> Dict[str, Any]:
 
 def command_export(args: argparse.Namespace) -> int:
     manifest = _load_manifest(args.source, args.quiet)
-    rows = group_sessions(
-        manifest, group_depth=args.group_depth, subject_depth=args.subject_depth
+    summary = export_metadata(
+        manifest,
+        args.dir,
+        group_depth=args.group_depth,
+        subject_depth=args.subject_depth,
     )
 
-    stats = None
-    merge_source = args.merge or (args.output if args.output.exists() else None)
-    if merge_source and merge_source.exists():
-        rows, stats = merge_declared(rows, read_table(merge_source))
-
-    write_table(rows, args.output)
-
     if not args.quiet:
-        likely = sum(1 for row in rows if row["observed_match"] == MATCH_BOTH)
-        print(f"Wrote {len(rows)} candidate sessions to {args.output}", file=sys.stderr)
         print(
-            f"  {likely} look like real sessions (observed_match = "
-            f"'{MATCH_BOTH}'); the rest may be backups, analysis folders, or "
-            "loose files. Check that column before filling anything in.",
+            f"{summary['sessions']} sessions -> {args.dir / SESSIONS_FILE}",
             file=sys.stderr,
         )
-        if stats:
+        print(
+            f"{summary['animals']} animals ({summary['animals_added']} new) -> "
+            f"{args.dir / ANIMALS_FILE}",
+            file=sys.stderr,
+        )
+        if summary["procedures_created"]:
             print(
-                f"Carried {stats['carried_values']} entered values across "
-                f"{stats['matched']} matching rows.",
+                f"empty procedure sheet -> {args.dir / PROCEDURES_FILE}  "
+                "(NDOS cannot observe surgeries; this file is yours)",
                 file=sys.stderr,
             )
-            if stats["orphaned"]:
-                print(
-                    f"Warning: {stats['orphaned']} rows in {merge_source} had no "
-                    "match and were not carried over. Their metadata is still in "
-                    "that file; nothing was deleted.",
-                    file=sys.stderr,
-                )
+        else:
+            print(
+                f"left {args.dir / PROCEDURES_FILE} untouched",
+                file=sys.stderr,
+            )
+        merge = summary["merge"]
+        if merge["carried_values"]:
+            print(
+                f"carried {merge['carried_values']} entered values across "
+                f"{merge['matched']} sessions",
+                file=sys.stderr,
+            )
+        if merge["orphaned"]:
+            print(
+                f"warning: {merge['orphaned']} previous session rows had no "
+                "match and were not carried over; nothing was deleted",
+                file=sys.stderr,
+            )
         print(
-            "Open it in Excel, fill in the non-observed columns, then run: "
-            f"python3 ndos_table.py check {args.output}",
+            f"Fill these in, then run: python3 ndos_table.py check {args.dir}",
             file=sys.stderr,
         )
     return 0
 
 
 def command_check(args: argparse.Namespace) -> int:
-    rows = read_table(args.table)
-    result = check_table(rows)
+    result = check_metadata(args.dir)
 
     if args.format == "json":
         rendered = json.dumps(result, indent=2) + "\n"
@@ -634,76 +1017,81 @@ def command_check(args: argparse.Namespace) -> int:
     else:
         print(rendered, end="")
 
+    problems = (
+        result["problems"]
+        + result["animals"]["problems"]
+        + result["procedures"]["problems"]
+        + result["references"]
+    )
+
     if args.emit:
-        if result["problems"] and args.strict:
+        if problems and args.strict:
             print(
                 f"Refusing to write {args.emit}: fix the problems above first, "
                 "or drop --strict.",
                 file=sys.stderr,
             )
             return 1
-        records = to_records(rows, include_empty=args.include_empty)
+        records = link_records(args.dir, include_empty=args.include_empty)
         args.emit.parent.mkdir(parents=True, exist_ok=True)
         args.emit.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
         if args.format != "json":
             print(
-                f"Wrote {records['session_count']} session records to {args.emit}",
+                f"Wrote {records['session_count']} linked session records to "
+                f"{args.emit}",
                 file=sys.stderr,
             )
 
-    # A non-zero status lets this gate a pipeline or a pre-publication check.
-    return 1 if result["problems"] and args.strict else 0
+    return 1 if problems and args.strict else 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Round-trip lab metadata through a spreadsheet.",
-        epilog="These commands never modify, move, or delete source data files.",
+        description="Round-trip lab metadata through linked spreadsheets.",
+        epilog=(
+            "Metadata lives in three tables: animals.csv (one row per animal), "
+            "procedures.csv (surgeries, injections, drugs) and sessions.csv "
+            "(recordings). These commands never modify source data files."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     export = subparsers.add_parser(
-        "export", help="Build a metadata table from a manifest or directory"
+        "export", help="Create or refresh the metadata tables"
     )
     export.add_argument("source", type=Path, help="manifest.json, or a directory to scan")
     export.add_argument(
-        "-o", "--output", type=Path, default=Path("sessions.csv"), help="CSV to write"
+        "-d", "--dir", type=Path, default=Path("metadata"),
+        help="Directory to hold the tables (default: metadata/)",
     )
     export.add_argument(
-        "--merge",
-        type=Path,
-        help="Previous table to carry entered values from (defaults to --output if it exists)",
-    )
-    export.add_argument(
-        "--group-depth",
-        type=int,
+        "--group-depth", type=int,
         help="Directory depth that separates sessions (default: inferred)",
     )
     export.add_argument(
-        "--subject-depth",
-        type=int,
+        "--subject-depth", type=int,
         help="Directory depth holding subject names (default: inferred)",
     )
     export.add_argument("-q", "--quiet", action="store_true")
     export.set_defaults(func=command_export)
 
-    check = subparsers.add_parser("check", help="Validate a filled-in metadata table")
-    check.add_argument("table", type=Path, help="CSV produced by export")
+    check = subparsers.add_parser("check", help="Validate the metadata tables")
+    check.add_argument(
+        "dir", type=Path, nargs="?", default=Path("metadata"),
+        help="Metadata directory (default: metadata/)",
+    )
     check.add_argument("-o", "--output", type=Path, help="Write the report here")
     check.add_argument("-f", "--format", choices=("text", "json"), default="text")
     check.add_argument(
         "--strict", action="store_true", help="Exit non-zero if any problem is found"
     )
     check.add_argument(
-        "--emit",
-        type=Path,
-        metavar="JSON",
-        help="Write validated, evidence-typed session records for downstream NDOS modules",
+        "--emit", type=Path, metavar="JSON",
+        help="Write linked, evidence-typed session records for downstream NDOS modules",
     )
     check.add_argument(
-        "--include-empty",
-        action="store_true",
-        help="Include rows with no entered metadata in --emit output",
+        "--include-empty", action="store_true",
+        help="Include sessions with no entered metadata in --emit output",
     )
     check.set_defaults(func=command_check)
 

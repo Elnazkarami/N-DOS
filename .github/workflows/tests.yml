@@ -62,11 +62,11 @@ jobs:
           python ndos_scan.py /tmp/messy-lab --output /tmp/manifest.json
           python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
           cat /tmp/report.md
-          python ndos_table.py export /tmp/manifest.json -o /tmp/sessions.csv
+          python ndos_table.py export /tmp/manifest.json -d /tmp/metadata
           # --include-empty keeps rows that have no hand-entered metadata, so
           # the query below has observed evidence to actually match against.
-          python ndos_table.py check /tmp/sessions.csv --emit /tmp/metadata.json --include-empty
-          python ndos_query.py /tmp/metadata.json -w 'modalities~electrophysiology' -w 'file_count>=2'
+          python ndos_table.py check /tmp/metadata --emit /tmp/linked.json --include-empty
+          python ndos_query.py /tmp/linked.json -w 'modalities~electrophysiology' -w 'file_count>=2'
 
   schema:
     name: validate schemas

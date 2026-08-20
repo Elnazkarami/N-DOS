@@ -80,33 +80,46 @@ one as another.
 ### `ndos_table.py` — get lab metadata in, via the tool you already use
 
 Scanning reveals what is on disk. It cannot reveal which animal a recording
-came from, what was injected, or where. That knowledge lives in a notebook or
+came from, what was injected, or when. That knowledge lives in a notebook or
 an Excel sheet, so NDOS meets it there.
 
 ```bash
-python3 ndos_table.py export manifest.json -o sessions.csv   # build the sheet
-# ... open sessions.csv in Excel and fill in the blanks ...
-python3 ndos_table.py check sessions.csv                     # validate it
-python3 ndos_table.py check sessions.csv --emit metadata.json
+python3 ndos_table.py export manifest.json -d metadata/   # build the sheets
+# ... open them in Excel and fill in the blanks ...
+python3 ndos_table.py check metadata/ --emit linked.json
 ```
 
-`export` groups files into candidate sessions and pre-fills everything NDOS
-could observe, so you edit rather than type from scratch. The
-`observed_match` column tells you which rows are worth your time: on the
-bundled fixture it identifies the 3 real sessions and correctly rejects the
-backup folder, the scratch directory, and the analysis scripts.
+Metadata lives in **three linked tables**, because a fact recorded once should
+govern every session it applies to:
 
-**Re-exporting never destroys your typing.** Declared values are matched by a
-stable identifier and carried across, while observed columns refresh. If a row
-disappears between scans, you are told rather than silently losing the
-metadata attached to it.
+| File | One row per | Filled by |
+| --- | --- | --- |
+| `animals.csv` | animal — species, strain, sex, date of birth, genotype | you, once per animal |
+| `procedures.csv` | surgery, injection, implant, drug, training | you; NDOS cannot observe a surgery, so it never touches this file |
+| `sessions.csv` | recording session — date, task, QC | NDOS pre-fills what it observed; you add the rest |
+
+`animals.csv` is seeded with the subject names NDOS found in your folder tree,
+so you start with rows rather than a blank sheet. Sessions are regenerated on
+every export with observed columns refreshed and typed-in values carried
+across; a row that disappears is reported rather than silently taking its
+metadata with it.
+
+**Intervals are computed, never typed.** Because a procedure has a date and a
+session has a date, NDOS derives `days_since_injection`, `days_since_implant`,
+`age_days`, and so on. These carry the status `computed`, so they are never
+mistaken for something a person asserted — and they make "recorded three to
+five weeks after the injection" a query you can actually run.
 
 Entry is forgiving, validation is strict. `mouse`, `Mouse`, and `mice` all
-resolve to `mus musculus`; `ephys` resolves to `electrophysiology`; `female`
-to `F`. What you actually typed is preserved alongside the mapped value so the
-mapping can be audited. But `21/03/2025` is refused, because `03/04/2025`
-means 3 April in the UK and 4 March in the US and guessing would silently
-corrupt a date.
+resolve to `mus musculus`; `ephys` to `electrophysiology`; `viral injection`
+to `injection`; `female` to `F`. What you typed is preserved beside the mapped
+value so the mapping can be audited. But `21/03/2025` is refused, because
+`03/04/2025` means 3 April in the UK and 4 March in the US and guessing would
+silently corrupt a date.
+
+Validation spans the tables, not just each file: a session naming an animal
+with no row, or a procedure for a subject nobody described, is reported as a
+broken link.
 
 A blank cell and the word `unknown` mean different things, and NDOS keeps them
 apart: blank means nobody has filled it in yet, `unknown` means somebody
@@ -190,10 +203,10 @@ histology stored away from the recordings it validates.
 ```bash
 python3 tests/fixtures/make_messy_lab.py /tmp/messy-lab
 python3 ndos_report.py /tmp/messy-lab
-python3 ndos_table.py export /tmp/messy-lab -o /tmp/sessions.csv
-# fill in a few rows, then:
-python3 ndos_table.py check /tmp/sessions.csv --emit /tmp/metadata.json
-python3 ndos_query.py /tmp/metadata.json -w species=mouse -w sex=F
+python3 ndos_table.py export /tmp/messy-lab -d /tmp/metadata
+# fill in a few rows across the three sheets, then:
+python3 ndos_table.py check /tmp/metadata --emit /tmp/linked.json
+python3 ndos_query.py /tmp/linked.json -w species=mouse -w sex=F
 ```
 
 ---
