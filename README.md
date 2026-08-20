@@ -162,6 +162,39 @@ Cohorts are frozen with the full query plan against
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
+### `ndos_tags.py` — validated, temporary, safe to delete
+
+The layout reserves `flagged_data/` and `temp/`, and the standard defines the
+flags that make them mean something:
+`{"validated": true, "temp": false, "deletable": false}`.
+
+```bash
+python3 ndos_tags.py set spikes.npy --validated --note "curated in Phy"
+python3 ndos_tags.py list ./project --flag temp
+python3 ndos_tags.py sweep ./project              # plan a cleanup
+python3 ndos_tags.py sweep ./project --apply      # after reading it
+```
+
+Tags live in a `tags.json` beside the data they describe, one per session, so
+a session directory stays self-describing if it is moved or copied.
+
+**A validated file is never swept**, whatever its other flags say, and marking
+something both validated and deletable is recorded as a conflict rather than
+resolved silently. `sweep` plans by default and deletes only on `--apply` with
+a confirmation: the manuscript imagines a maintenance script removing
+temporaries automatically, and deletion driven by a hand-edited flag is how a
+lab loses data it meant to keep.
+
+Files that *look* like scratch but were never flagged are listed separately
+and only with `--include-untagged`, because nobody has vouched for them.
+Scratch is judged relative to the project root, so a project living under
+`/tmp` does not have all of its files called temporary.
+
+`ndos_organize` tags automatically: spike-sorting scratch is routed to
+`processed_data/<sub>/<ses>/temp/`, flagged `temp`, and recorded in that
+session's `derived_metadata.json` — so a sweep finds it later without anyone
+remembering which files were intermediates.
+
 ### `ndos_organize.py` — rebuild the N-DOS layout from what already exists
 
 An inventory *describes* a directory. It does not make an inherited archive
@@ -400,6 +433,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_archive.py` | Archive inspection and planned extraction |
 | `ndos_organize.py` | Rebuild the N-DOS layout from existing structure |
+| `ndos_tags.py` | Validation, temporary and deletion flags |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

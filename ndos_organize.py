@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ndos_report
 import ndos_scan
+import ndos_tags
 
 LAYOUT_VERSION = "0.1"
 GENERATOR_VERSION = "0.1.0"
@@ -151,6 +152,10 @@ TYPE_RULES: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
         ".zip", ".tar", ".tgz", ".tar.gz", ".gz",
     )),
 )
+
+#: Version markers a lab already writes into filenames, preserved rather than
+#: discarded so a reprocessing is not silently flattened onto its predecessor.
+VERSION_TOKEN = re.compile(r"[._-](v\d+|version\d+)$", re.I)
 
 #: How many directory levels above a file may inform its data type.
 NEARBY_SEGMENTS = 3
@@ -352,6 +357,10 @@ def standard_name(
     """
     data_type, confident = _data_type(name, segments, extension)
     stem, suffix = _split_extension(name)
+    version = ""
+    marker = VERSION_TOKEN.search(stem)
+    if marker:
+        version = "_" + marker.group(1).lower()
     parts = f"{subject}_{session}_{data_type}"
     # A discriminator only helps when the type is a shared standard label.
     # Where the type was taken from the filename, repeating it would give
@@ -363,13 +372,23 @@ def standard_name(
         if confident
         else f"no standard data type applies; kept {data_type!r} from the original name"
     )
-    return parts + suffix, reason, confident
+    if version:
+        reason += f"; version marker {version.lstrip('_')!r} kept"
+    return parts + version + suffix, reason, confident
 
 
 def _target(
-    role: str, subject: Optional[str], session: Optional[str], name: str
+    role: str,
+    subject: Optional[str],
+    session: Optional[str],
+    name: str,
+    temporary: bool = False,
 ) -> Optional[str]:
     """Where a file belongs in the NDOS layout."""
+    if temporary and subject and session:
+        # The manuscript places spike-sorting scratch in a temp/ subdirectory
+        # of the session, tagged for deletion after validation.
+        return f"{PROCESSED}/{subject}/{session}/temp/{name}"
     if role in (FIGURES, SCRIPTS, METADATA):
         if subject and session:
             return f"{role}/{subject}/{session}/{name}"
@@ -520,7 +539,16 @@ def derive(
                     "distinguishes it"
                 )
 
-        target = _target(item["role"], subject, session_id, filename)
+        temporary = ndos_tags.looks_temporary(Path(item["entry"]["path"]))
+        if temporary:
+            reasons.append(
+                "scratch by convention, so it goes to the session's temp/ "
+                "directory and is tagged temporary"
+            )
+
+        target = _target(
+            item["role"], subject, session_id, filename, temporary=temporary
+        )
         if target is None:
             missing = "subject" if not subject else "session"
             target = f"{FLAGGED}/{item['entry']['path']}"
@@ -539,6 +567,7 @@ def derive(
                 "category": item["category"],
                 "size_bytes": item["entry"]["size_bytes"],
                 "original_name": item["name"],
+                "temporary": temporary,
                 "placed": not target.startswith(f"{FLAGGED}/"),
                 "why": reasons,
             }
@@ -626,6 +655,7 @@ def build_plan(
                 "subject": placement["subject"],
                 "session": placement["session"],
                 "role": placement["role"],
+                "temporary": placement.get("temporary", False),
                 "placed": placement["placed"],
                 "why": placement["why"],
             }
@@ -721,6 +751,77 @@ def apply_plan(
 
         if progress and index % 500 == 0:
             print(f"  ...{index}/{len(plan['actions'])}", file=sys.stderr)
+
+    # The manuscript places a derived_metadata.json in each processed session,
+    # documenting how the contents came to be there.
+    sessions: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for action in plan["actions"]:
+        # Scratch lands under processed_data regardless of the role its
+        # content implies, so it belongs in that session's record too.
+        in_processed = action["role"] == PROCESSED or action.get("temporary")
+        if not in_processed or not action["subject"] or not action["session"]:
+            continue
+        sessions.setdefault((action["subject"], action["session"]), []).append(action)
+
+    for (subject, session), members in sessions.items():
+        record = destination / PROCESSED / subject / session / "derived_metadata.json"
+        if record.exists():
+            continue
+        try:
+            record.parent.mkdir(parents=True, exist_ok=True)
+            record.write_text(
+                json.dumps(
+                    {
+                        "subject_id": subject,
+                        "session_id": session,
+                        "generated_at": ndos_scan._utc_iso(
+                            datetime.now(tz=timezone.utc).timestamp()
+                        ),
+                        "generator": {
+                            "name": "ndos-organize", "version": GENERATOR_VERSION
+                        },
+                        "source_root": plan["source_root"],
+                        "mode": mode,
+                        "files": [
+                            {
+                                "name": Path(item["target"]).name,
+                                "original": item["source"],
+                                "temporary": item.get("temporary", False),
+                                "why": item["why"],
+                            }
+                            for item in members
+                        ],
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            scaffold_files.append(str(record))
+        except OSError:
+            pass
+
+    # Scratch is tagged where it lands, so a sweep can find it later without
+    # anyone having to remember which files were intermediates.
+    temporary = [a for a in plan["actions"] if a.get("temporary")]
+    for action in temporary:
+        target = Path(action["target"])
+        if not target.exists() and not target.is_symlink():
+            continue
+        try:
+            ndos_tags.set_tags(
+                target, {"temp": True},
+                note="placed in temp/ by ndos_organize; not validated",
+                author="ndos-organize",
+            )
+        except (ndos_tags.TagError, OSError):
+            pass
+    if temporary:
+        directories = {str(Path(a["target"]).parent) for a in temporary}
+        for directory in directories:
+            candidate = Path(directory) / ndos_tags.TAGS_FILE
+            if candidate.exists():
+                scaffold_files.append(str(candidate))
 
     flagged = [a for a in plan["actions"] if not a["placed"]]
     if flagged:
