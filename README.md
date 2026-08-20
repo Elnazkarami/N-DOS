@@ -1,4 +1,4 @@
-# NDOS
+# NDOS: Neuroscience Data Organization System
 
 **A BIDS-inspired framework for wet-lab and animal neuroscience data.**
 
