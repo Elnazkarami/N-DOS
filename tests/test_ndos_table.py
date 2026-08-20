@@ -26,7 +26,7 @@ from ndos_table import (
     merge_declared,
     normalise,
     read_table,
-    to_records,
+    _typed_fields,
     write_table,
 )
 
@@ -71,9 +71,9 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(result["problems"], [])
 
     def test_values_outside_a_vocabulary_are_rejected(self):
-        result = check_table([_row(ndos_id="ndos-0000000001", sex="yes")])
+        result = check_table([_row(ndos_id="ndos-0000000001", qc_status="maybe")])
         self.assertEqual(len(result["problems"]), 1)
-        self.assertEqual(result["problems"][0]["column"], "sex")
+        self.assertEqual(result["problems"][0]["column"], "qc_status")
 
     def test_duplicate_identifiers_are_reported(self):
         result = check_table([
@@ -86,19 +86,18 @@ class ValidationTests(unittest.TestCase):
 
     def test_explicit_unknown_is_counted_separately_from_blank(self):
         result = check_table([
-            _row(ndos_id="ndos-0000000001", sex="unknown"),
+            _row(ndos_id="ndos-0000000001", qc_status="unknown"),
             _row(ndos_id="ndos-0000000002"),
         ])
         self.assertEqual(result["problems"], [])
-        self.assertEqual(result["completeness"]["sex"]["filled"], 1)
-        self.assertEqual(result["completeness"]["sex"]["explicit_unknown"], 1)
+        self.assertEqual(result["completeness"]["qc_status"]["filled"], 1)
+        self.assertEqual(result["completeness"]["qc_status"]["explicit_unknown"], 1)
 
     def test_a_row_is_complete_only_with_every_required_field(self):
         complete = _row(
-            ndos_id="ndos-0000000001", subject_id="M01", species="mouse",
-            sex="F", session_date="2025-03-14",
+            ndos_id="ndos-0000000001", subject_id="M01", session_date="2025-03-14",
         )
-        partial = _row(ndos_id="ndos-0000000002", subject_id="M02", species="mouse")
+        partial = _row(ndos_id="ndos-0000000002", subject_id="M02")
 
         result = check_table([complete, partial])
 
@@ -109,7 +108,7 @@ class ValidationTests(unittest.TestCase):
 class MergeTests(unittest.TestCase):
     def test_entered_values_survive_a_rescan(self):
         existing = [
-            _row(ndos_id="ndos-0000000001", subject_id="M01", species="mouse", sex="F")
+            _row(ndos_id="ndos-0000000001", subject_id="M01", session_type="ephys")
         ]
         fresh = [
             {"ndos_id": "ndos-0000000001", "observed_file_count": 9},
@@ -119,7 +118,7 @@ class MergeTests(unittest.TestCase):
         merged, stats = merge_declared(fresh, existing)
 
         self.assertEqual(merged[0]["subject_id"], "M01")
-        self.assertEqual(merged[0]["species"], "mouse")
+        self.assertEqual(merged[0]["session_type"], "ephys")
         # Observed values are refreshed, not carried over from the old table.
         self.assertEqual(merged[0]["observed_file_count"], 9)
         self.assertEqual(stats["matched"], 1)
@@ -167,40 +166,35 @@ class CsvSafetyTests(unittest.TestCase):
             self.assertEqual(read_table(path)[0]["notes"], "süß — µV, 30°C")
 
 
-class RecordTests(unittest.TestCase):
-    def test_evidence_status_distinguishes_declared_from_unknown(self):
-        rows = [_row(ndos_id="ndos-0000000001", subject_id="M01", sex="unknown")]
-        records = to_records(rows)
+class EvidenceTypingTests(unittest.TestCase):
+    """How a value is known travels with the value itself."""
 
-        declared = records["sessions"][0]["declared"]
-        self.assertEqual(declared["subject_id"]["status"], "declared")
-        self.assertEqual(declared["sex"]["status"], "unknown")
+    def test_declared_is_distinguished_from_explicitly_unknown(self):
+        fields = _typed_fields(
+            _row(subject_id="M01", qc_status="unknown"),
+            ndos_table.SESSION_DECLARED_COLUMNS,
+        )
+        self.assertEqual(fields["subject_id"]["status"], "declared")
+        self.assertEqual(fields["qc_status"]["status"], "unknown")
 
     def test_blank_fields_are_absent_rather_than_empty(self):
-        rows = [_row(ndos_id="ndos-0000000001", subject_id="M01")]
-        declared = to_records(rows)["sessions"][0]["declared"]
-
-        self.assertIn("subject_id", declared)
+        fields = _typed_fields(
+            _row(subject_id="M01"), ndos_table.SESSION_DECLARED_COLUMNS
+        )
+        self.assertIn("subject_id", fields)
         # Nobody has filled these in; that is different from 'unknown'.
-        self.assertNotIn("species", declared)
-        self.assertNotIn("sex", declared)
+        self.assertNotIn("session_date", fields)
+        self.assertNotIn("qc_status", fields)
 
     def test_the_original_text_is_kept_whenever_a_value_is_mapped(self):
-        rows = [_row(ndos_id="ndos-0000000001", species="mouse", strain="C57BL/6J")]
-        declared = to_records(rows)["sessions"][0]["declared"]
-
-        self.assertEqual(declared["species"]["value"], "mus musculus")
-        self.assertEqual(declared["species"]["as_entered"], "mouse")
+        fields = _typed_fields(
+            _row(session_type="ephys", task="T-maze"),
+            ndos_table.SESSION_DECLARED_COLUMNS,
+        )
+        self.assertEqual(fields["session_type"]["value"], "electrophysiology")
+        self.assertEqual(fields["session_type"]["as_entered"], "ephys")
         # Nothing was mapped, so there is nothing to audit.
-        self.assertNotIn("as_entered", declared["strain"])
-
-    def test_rows_with_no_entered_metadata_are_omitted_by_default(self):
-        rows = [
-            _row(ndos_id="ndos-0000000001", subject_id="M01"),
-            _row(ndos_id="ndos-0000000002"),
-        ]
-        self.assertEqual(to_records(rows)["session_count"], 1)
-        self.assertEqual(to_records(rows, include_empty=True)["session_count"], 2)
+        self.assertNotIn("as_entered", fields["task"])
 
 
 class GroupingTests(unittest.TestCase):
@@ -253,7 +247,7 @@ class GroupingTests(unittest.TestCase):
 
 
 class SchemaTests(unittest.TestCase):
-    def test_emitted_records_match_the_published_schema(self):
+    def test_linked_records_match_the_published_schema(self):
         try:
             import jsonschema
         except ImportError:
@@ -261,21 +255,42 @@ class SchemaTests(unittest.TestCase):
 
         schema_path = (
             Path(__file__).resolve().parent.parent
-            / "schemas"
-            / "session_metadata.schema.json"
+            / "schemas" / "session_metadata.schema.json"
         )
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
         with tempfile.TemporaryDirectory() as directory:
-            root = build(Path(directory) / "lab", force=True)
+            base = Path(directory)
+            root = build(base / "lab", force=True)
             manifest = ndos_scan.scan(root, include_checksums=False)
-            rows = group_sessions(manifest)
+            metadata = base / "metadata"
+            ndos_table.export_metadata(manifest, metadata)
+
+            with (metadata / ndos_table.ANIMALS_FILE).open(
+                "w", encoding="utf-8-sig", newline=""
+            ) as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(ndos_table.ANIMAL_COLUMNS))
+                writer.writeheader()
+                writer.writerow({"subject_id": "M01", "species": "mouse",
+                                 "sex": "female", "date_of_birth": "2024-11-02"})
+            with (metadata / ndos_table.PROCEDURES_FILE).open(
+                "w", encoding="utf-8-sig", newline=""
+            ) as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(ndos_table.PROCEDURE_COLUMNS))
+                writer.writeheader()
+                writer.writerow({"procedure_id": "P001", "subject_id": "M01",
+                                 "procedure_date": "2025-02-14",
+                                 "procedure_type": "viral injection",
+                                 "target_region": "CA1"})
+            rows = read_table(metadata / ndos_table.SESSIONS_FILE)
             for row in rows:
-                row.update(
-                    subject_id="M01", species="mouse", sex="female",
-                    session_date="2025-03-14", session_type="ephys",
-                )
-            jsonschema.validate(to_records(rows), schema)
+                if row["observed_path"] == "2025-03-14/M01/ses-01":
+                    row["subject_id"] = "M01"
+                    row["session_date"] = "2025-03-14"
+                    row["session_type"] = "ephys"
+            write_table(rows, metadata / ndos_table.SESSIONS_FILE)
+
+            jsonschema.validate(ndos_table.link_records(metadata), schema)
 
 
 class EndToEndTests(unittest.TestCase):
@@ -295,7 +310,7 @@ class EndToEndTests(unittest.TestCase):
                 row for row in rows
                 if row["observed_path"] == "2025-03-14/M01/ses-01"
             )
-            target.update(subject_id="M01", species="mouse", sex="female")
+            target.update(subject_id="M01", session_type="ephys", qc_status="pass")
             write_table(rows, table)
 
             # 3. New data arrives and everything is rescanned.
@@ -312,7 +327,9 @@ class EndToEndTests(unittest.TestCase):
             # 4. The typed metadata survived, and the new session is present.
             final = {row["observed_path"]: row for row in read_table(table)}
             self.assertEqual(final["2025-03-14/M01/ses-01"]["subject_id"], "M01")
-            self.assertEqual(final["2025-03-14/M01/ses-01"]["species"], "mouse")
+            self.assertEqual(
+                final["2025-03-14/M01/ses-01"]["session_type"], "ephys"
+            )
             self.assertIn("2025-05-01/M09/ses-01", final)
             self.assertEqual(final["2025-05-01/M09/ses-01"]["subject_id"], "")
             self.assertEqual(stats["orphaned"], 0)
@@ -320,3 +337,227 @@ class EndToEndTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EntityModelTests(unittest.TestCase):
+    """The three linked tables, and what they make possible.
+
+    The point of splitting animals and procedures out of the session sheet is
+    that a fact recorded once should govern every session it applies to.
+    """
+
+    def _build(self, base: Path):
+        root = build(base / "lab", force=True)
+        manifest = ndos_scan.scan(root, include_checksums=False)
+        directory = base / "metadata"
+        ndos_table.export_metadata(manifest, directory)
+        return directory
+
+    def _write(self, path: Path, rows, columns):
+        with path.open("w", encoding="utf-8-sig", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(columns))
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_export_creates_three_linked_tables(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+
+            self.assertTrue((metadata / ndos_table.ANIMALS_FILE).is_file())
+            self.assertTrue((metadata / ndos_table.PROCEDURES_FILE).is_file())
+            self.assertTrue((metadata / ndos_table.SESSIONS_FILE).is_file())
+
+    def test_animals_are_seeded_from_observed_subject_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            names = {
+                row["subject_id"]
+                for row in read_table(metadata / ndos_table.ANIMALS_FILE)
+            }
+
+            self.assertIn("M01", names)
+            self.assertIn("M03", names)
+            # A scratch folder is not an animal.
+            self.assertNotIn("scratch", names)
+            self.assertNotIn("backup", names)
+
+    def test_procedures_are_never_overwritten_by_a_rescan(self):
+        # NDOS cannot observe a surgery, so it must never touch that file.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            metadata = self._build(base)
+            procedures = metadata / ndos_table.PROCEDURES_FILE
+            self._write(
+                procedures,
+                [{"procedure_id": "P001", "subject_id": "M01",
+                  "procedure_date": "2025-02-14", "procedure_type": "injection"}],
+                ndos_table.PROCEDURE_COLUMNS,
+            )
+
+            manifest = ndos_scan.scan(base / "lab", include_checksums=False)
+            ndos_table.export_metadata(manifest, metadata)
+
+            rows = read_table(procedures)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["procedure_id"], "P001")
+
+    def test_animal_facts_are_recorded_once_and_reach_every_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01", "species": "mouse", "sex": "female"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            sessions = read_table(metadata / ndos_table.SESSIONS_FILE)
+            for row in sessions:
+                if row["observed_path"].startswith("2025-03-14/M01"):
+                    row["subject_id"] = "M01"
+                    row["session_date"] = "2025-03-14"
+            self._write(metadata / ndos_table.SESSIONS_FILE, sessions, ndos_table.COLUMNS)
+
+            linked = ndos_table.link_records(metadata)
+            record = linked["sessions"][0]
+
+            # Typed once in animals.csv, present on the session.
+            self.assertEqual(record["animal"]["declared"]["species"]["value"], "mus musculus")
+            self.assertEqual(record["animal"]["declared"]["sex"]["value"], "F")
+
+    def test_intervals_since_a_procedure_are_computed_not_typed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01", "species": "mouse", "sex": "F",
+                  "date_of_birth": "2024-11-02"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            self._write(
+                metadata / ndos_table.PROCEDURES_FILE,
+                [{"procedure_id": "P001", "subject_id": "M01",
+                  "procedure_date": "2025-02-14",
+                  "procedure_type": "viral injection", "target_region": "CA1"}],
+                ndos_table.PROCEDURE_COLUMNS,
+            )
+            sessions = read_table(metadata / ndos_table.SESSIONS_FILE)
+            for row in sessions:
+                if row["observed_path"] == "2025-03-14/M01/ses-01":
+                    row["subject_id"] = "M01"
+                    row["session_date"] = "2025-03-14"
+            self._write(metadata / ndos_table.SESSIONS_FILE, sessions, ndos_table.COLUMNS)
+
+            record = ndos_table.link_records(metadata)["sessions"][0]
+            derived = record["derived"]
+
+            # 14 Feb to 14 Mar is 28 days; nobody typed that number.
+            self.assertEqual(derived["days_since_injection"]["value"], "28")
+            self.assertEqual(derived["days_since_injection"]["status"], "computed")
+            self.assertEqual(derived["age_days"]["value"], "132")
+            # "viral injection" was mapped onto the controlled term.
+            self.assertEqual(
+                record["procedures"][0]["declared"]["procedure_type"]["value"],
+                "injection",
+            )
+            self.assertEqual(record["procedures"][0]["days_before_session"], 28)
+
+    def test_a_procedure_after_the_session_is_labelled_not_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01", "species": "mouse"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            self._write(
+                metadata / ndos_table.PROCEDURES_FILE,
+                [{"procedure_id": "P009", "subject_id": "M01",
+                  "procedure_date": "2025-06-01", "procedure_type": "perfusion"}],
+                ndos_table.PROCEDURE_COLUMNS,
+            )
+            sessions = read_table(metadata / ndos_table.SESSIONS_FILE)
+            for row in sessions:
+                if row["observed_path"] == "2025-03-14/M01/ses-01":
+                    row["subject_id"] = "M01"
+                    row["session_date"] = "2025-03-14"
+            self._write(metadata / ndos_table.SESSIONS_FILE, sessions, ndos_table.COLUMNS)
+
+            record = ndos_table.link_records(metadata)["sessions"][0]
+
+            self.assertEqual(record["procedures"][0]["relation"], "after")
+            # A perfusion that happened later cannot be an elapsed interval.
+            self.assertNotIn("days_since_perfusion", record.get("derived", {}))
+
+    def test_a_session_naming_an_unknown_animal_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            sessions = read_table(metadata / ndos_table.SESSIONS_FILE)
+            sessions[0]["subject_id"] = "GHOST"
+            self._write(metadata / ndos_table.SESSIONS_FILE, sessions, ndos_table.COLUMNS)
+
+            result = ndos_table.check_metadata(metadata)
+
+            self.assertTrue(
+                any("GHOST" in problem["message"] for problem in result["references"])
+            )
+
+    def test_a_procedure_for_an_unknown_animal_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            self._write(
+                metadata / ndos_table.PROCEDURES_FILE,
+                [{"procedure_id": "P001", "subject_id": "NOBODY",
+                  "procedure_date": "2025-01-01", "procedure_type": "surgery"}],
+                ndos_table.PROCEDURE_COLUMNS,
+            )
+
+            result = ndos_table.check_metadata(metadata)
+
+            self.assertTrue(
+                any("NOBODY" in problem["message"] for problem in result["references"])
+            )
+
+    def test_duplicate_animal_rows_are_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01"}, {"subject_id": "M01"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+
+            result = ndos_table.check_metadata(metadata)
+
+            self.assertTrue(
+                any("duplicate" in p["message"] for p in result["animals"]["problems"])
+            )
+
+    def test_procedure_dates_are_validated_like_any_other_date(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = self._build(Path(directory))
+            self._write(
+                metadata / ndos_table.ANIMALS_FILE,
+                [{"subject_id": "M01"}],
+                ndos_table.ANIMAL_COLUMNS,
+            )
+            self._write(
+                metadata / ndos_table.PROCEDURES_FILE,
+                [{"procedure_id": "P001", "subject_id": "M01",
+                  "procedure_date": "14/02/2025", "procedure_type": "surgery"}],
+                ndos_table.PROCEDURE_COLUMNS,
+            )
+
+            result = ndos_table.check_metadata(metadata)
+
+            self.assertTrue(
+                any("ambiguous" in p["message"] for p in result["procedures"]["problems"])
+            )

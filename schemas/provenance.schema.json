@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ndos.dev/schemas/provenance/0.1",
+  "title": "NDOS Run Record",
+  "description": "One execution of a command: what it used, what it produced, the code version and environment it ran in, and whether it succeeded. Aligned with the W3C PROV notion of an Activity that used and generated Entities. Failed runs are recorded, because an artefact produced by a run that exited non-zero is exactly what a person needs warning about.",
+  "type": "object",
+  "required": [
+    "provenance_version", "run_id", "name", "generator", "command",
+    "working_directory", "started_at", "ended_at", "duration_seconds",
+    "exit_code", "status", "environment", "used", "generated"
+  ],
+  "properties": {
+    "provenance_version": { "const": "0.1" },
+    "run_id": { "type": "string", "pattern": "^run-[a-f0-9]{12}$" },
+    "name": { "type": "string", "minLength": 1 },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "description": "The command as executed, unshelled, so it can be re-run verbatim.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "working_directory": { "type": "string" },
+    "started_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "ended_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "duration_seconds": { "type": "number", "minimum": 0 },
+    "exit_code": { "type": ["integer", "null"] },
+    "status": { "type": "string", "enum": ["succeeded", "failed"] },
+    "code": {
+      "description": "Version of the code that ran, when the working directory is a git repository.",
+      "type": "object",
+      "required": ["commit"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "uncommitted_changes": {
+          "description": "True when the working tree differed from the commit, meaning the commit alone does not describe what ran.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "description": "Where it ran. Environment variables appear only when explicitly named at capture time, so records do not silently collect credentials.",
+      "type": "object",
+      "required": ["python_version", "platform"],
+      "properties": {
+        "python_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "hostname": { "type": "string" },
+        "user": { "type": "string" },
+        "variables": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "used": {
+      "description": "Inputs, checksummed before the run started.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "generated": {
+      "description": "Files that appeared or changed in the watched output directories.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/generated" }
+    },
+    "stdout": { "$ref": "#/$defs/capture" },
+    "stderr": { "$ref": "#/$defs/capture" },
+    "error": {
+      "description": "Present when the command could not be started at all.",
+      "type": "string"
+    },
+    "extensions": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "generated": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes", "change"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "change": {
+          "description": "'created' if the file did not exist before the run; 'modified' if its contents changed.",
+          "type": "string",
+          "enum": ["created", "modified"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "capture": {
+      "description": "Tail of the command's output, capped so records stay small.",
+      "type": "object",
+      "required": ["text", "truncated"],
+      "properties": {
+        "text": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "total_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

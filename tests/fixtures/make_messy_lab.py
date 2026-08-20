@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import zipfile
 from pathlib import Path
 
 #: (relative path, byte size, content seed). Files sharing a seed are made
@@ -39,8 +40,7 @@ LAYOUT = (
     ("2025-03-21/m02/session2/analysis/theta_power.mat", 150_000, "theta02"),
     ("2025-03-21/m02/session2/analysis/figure1.png", 220_000, "fig02"),
 
-    # --- Subject M03: everything still in an archive -----------------------
-    ("2025-04-02/M03/ses-01/M03_ses01_raw.zip", 1_400_000, "zip03"),
+    # --- Subject M03: README beside a real archive (built separately) ------
     ("2025-04-02/M03/ses-01/README", 800, "readme03"),
 
     # --- A full duplicate backup of M01 ------------------------------------
@@ -80,6 +80,26 @@ def _content(seed: str, size: int) -> bytes:
     return (block * repeats)[:size]
 
 
+#: Members of the one genuine archive in the fixture. M03's session was
+#: zipped and never unpacked, which is the ordinary state of most lab storage.
+ARCHIVE_PATH = "2025-04-02/M03/ses-01/M03_ses01_raw.zip"
+ARCHIVE_MEMBERS = (
+    ("2025_04_02/14_10_05/Miniscope/0.avi", 240_000, "m03vid0"),
+    ("2025_04_02/14_10_05/Miniscope/1.avi", 240_000, "m03vid1"),
+    ("2025_04_02/14_10_05/behaviour.csv", 30_000, "m03behav"),
+    ("2025_04_02/14_10_05/metaData.json", 900, "m03meta"),
+)
+
+
+def _write_archive(root: Path) -> None:
+    """A real zip, so archive inspection has something true to read."""
+    target = root / ARCHIVE_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, size, seed in ARCHIVE_MEMBERS:
+            archive.writestr(name, _content(seed, size))
+
+
 def build(root: Path, force: bool = False) -> Path:
     root = root.expanduser().resolve()
     if root.exists():
@@ -93,6 +113,8 @@ def build(root: Path, force: bool = False) -> Path:
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(_content(seed, size))
+
+    _write_archive(root)
     return root
 
 
@@ -111,7 +133,7 @@ def main() -> int:
     except (FileExistsError, OSError) as error:
         parser.error(str(error))
 
-    print(f"Created {len(LAYOUT)} files under {root}")
+    print(f"Created {len(LAYOUT) + 1} files under {root}")
     return 0
 
 

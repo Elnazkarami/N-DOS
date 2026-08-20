@@ -49,12 +49,17 @@ jobs:
       # bare interpreter. If this job fails, a dependency crept in.
       - name: Import and run every module with no packages installed
         run: |
-          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query"
+          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
           python ndos_table.py --help
           python ndos_query.py --help
+          python ndos_prov.py --help
+          python ndos_archive.py --help
+          python ndos_organize.py --help
+          python ndos_tags.py --help
+          python ndos_convert.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -62,11 +67,34 @@ jobs:
           python ndos_scan.py /tmp/messy-lab --output /tmp/manifest.json
           python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
           cat /tmp/report.md
-          python ndos_table.py export /tmp/manifest.json -o /tmp/sessions.csv
+          python ndos_table.py export /tmp/manifest.json -d /tmp/metadata
           # --include-empty keeps rows that have no hand-entered metadata, so
           # the query below has observed evidence to actually match against.
-          python ndos_table.py check /tmp/sessions.csv --emit /tmp/metadata.json --include-empty
-          python ndos_query.py /tmp/metadata.json -w 'modalities~electrophysiology' -w 'file_count>=2'
+          python ndos_table.py check /tmp/metadata --emit /tmp/linked.json --include-empty
+          python ndos_query.py /tmp/linked.json -w 'modalities~electrophysiology' -w 'file_count>=2'
+          # Provenance round trip: wrap a command, then trace its output back.
+          python ndos_prov.py run -d /tmp/prov -i /tmp/manifest.json -o /tmp/derived \
+            -- python -c "import pathlib;d=pathlib.Path('/tmp/derived');d.mkdir(exist_ok=True);(d/'r.txt').write_text('x')"
+          python ndos_prov.py list -d /tmp/prov
+          python ndos_prov.py trace /tmp/derived/r.txt -d /tmp/prov
+          # Archive round trip: catalogue without extracting, then plan.
+          python ndos_archive.py inspect /tmp/messy-lab -c /tmp/archives.json
+          python ndos_archive.py search /tmp/archives.json '*.avi'
+          python ndos_archive.py plan /tmp/archives.json --dest /tmp/unpacked --name '*.avi'
+          # Rebuild the N-DOS layout, then undo it, leaving the source untouched.
+          python ndos_organize.py plan /tmp/manifest.json -d /tmp/project
+          python ndos_organize.py apply /tmp/manifest.json -d /tmp/project --yes
+          test -d /tmp/project/raw_data && test -f /tmp/project/README.md
+          python ndos_organize.py undo /tmp/project/.ndos-layout-log.json --yes
+          # Tags: flag, list, and plan a sweep without deleting anything.
+          python ndos_organize.py apply /tmp/manifest.json -d /tmp/project2 --yes
+          python ndos_tags.py list /tmp/project2
+          python ndos_tags.py sweep /tmp/project2 --include-untagged
+          # Handoff: BIDS-shaped export and an NWB conversion plan.
+          python ndos_convert.py bids /tmp/project2 -d /tmp/bids --write
+          test -f /tmp/bids/dataset_description.json
+          test -f /tmp/bids/participants.tsv
+          python ndos_convert.py nwb /tmp/project2
 
   schema:
     name: validate schemas
