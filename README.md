@@ -162,6 +162,64 @@ Cohorts are frozen with the full query plan against
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
+### `ndos_organize.py` — rebuild the N-DOS layout from what already exists
+
+An inventory *describes* a directory. It does not make an inherited archive
+understandable to a PI whose data collector left years ago. This builds the
+missing half: the N-DOS project, derived from the original structure rather
+than imposed on it.
+
+```bash
+python3 ndos_organize.py plan  /path/to/chaos -d ./project   # see it first
+python3 ndos_organize.py apply /path/to/chaos -d ./project   # then confirm
+python3 ndos_organize.py undo  ./project/.ndos-layout-log.json
+```
+
+The layout is the one defined in the N-DOS manuscript:
+
+```
+project/
+├── raw_data/<SubjectID>/<SessionID>/     # acquisition files
+├── processed_data/  analysis/  derivatives/
+├── flagged_data/    figures/   scripts/   metadata/
+└── README.md
+```
+
+SessionID follows the manuscript's `YYYYMMDD` convention, becoming
+`YYYYMMDD_01`, `_02` when a subject was recorded more than once that day.
+
+**Nothing is copied or moved by default.** The tree is built from symbolic
+links, so a 45 GB collection is organised in seconds, occupies about 40 KB,
+and is undone by deleting it. `--mode copy` and `--mode move` exist, are
+planned and confirmed the same way, and `move` says plainly that it relocates
+your data. Every apply writes `.ndos-layout-log.json`, and `undo` reverses it —
+including moving files back.
+
+**Every placement explains itself:**
+
+```
+raw_data/A0634/20201122/0.avi
+    from  0.avi
+    why   folder 'A0634' matches a subject identifier;
+          'A0600' above it read as a cohort or range
+    why   date '2020_11_22' with acquisition time '18_32_25'
+    why   imaging and video is treated as raw_data
+```
+
+Structure is read from directory names, from filenames when the folders are
+silent (`2020_11_20.zip` carries its date nowhere else), and from compound
+names like `A0634_201122_183220`.
+
+**Nothing is dropped.** Files whose subject or session cannot be determined go
+to `flagged_data/` with their original structure intact and a
+`flagged_notes.json` saying why — which is what the N-DOS layout reserves that
+directory for.
+
+**Redundant copies are recognised, not duplicated.** A lab that restructured
+its data once has the same recording in two places; on a real drive this was
+3.0 GB. Each file is linked once and the copies are listed, rather than
+appearing under invented names as though they were distinct.
+
 ### `ndos_archive.py` — see inside archives without extracting them
 
 Labs zip their archives because the data is enormous. On a real lab drive,
@@ -318,6 +376,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_query.py` | Cohort queries with evidence citation |
 | `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_archive.py` | Archive inspection and planned extraction |
+| `ndos_organize.py` | Rebuild the N-DOS layout from existing structure |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
