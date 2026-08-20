@@ -10,8 +10,11 @@ tissue and histology, and the analyses built on top of them.
 This repository is **NDOS Core**, the open-source layer. It is being built
 module by module. Each module works on its own, today, with no installation.
 
-> **Status:** early. The modules below are working and tested. The wider
-> framework described in the project plan is not built yet.
+> **Status:** the N-DOS standard defined in the manuscript — its directory
+> layout, session structure, naming conventions and data flags — is fully
+> implemented here, along with the automation built on top of it. Everything
+> below is working and tested against real lab storage. Interfaces are still
+> at 0.x and may change.
 
 ---
 
@@ -44,7 +47,29 @@ that you approve first.
 
 ---
 
+## The whole thing, end to end
+
+Starting from a directory nobody understands:
+
+```bash
+python3 ndos_report.py   /path/to/chaos                    # what is in here?
+python3 ndos_archive.py  inspect /path/to/chaos -c arch.json   # what is in the zips?
+python3 ndos_organize.py apply /path/to/chaos -d ./project  # build the N-DOS layout
+python3 ndos_table.py    export ./project -d ./metadata     # fill in what only you know
+python3 ndos_table.py    check  ./metadata --emit linked.json
+python3 ndos_query.py    linked.json -w species=mouse -w target_region=CA1
+python3 ndos_convert.py  bids ./project -d ./bids-export --write
+```
+
+Nothing in that sequence moves or modifies your data. The layout is built
+from symbolic links; the only commands that ever write to your files are
+`ndos_organize --mode move`, `ndos_archive extract`, and `ndos_tags sweep
+--apply`, each of which shows a plan and asks first.
+
 ## Modules
+
+The order below is the order you meet them: understand what you have,
+then structure it, then describe it, then use it.
 
 ### `ndos_report.py` — understand a directory you have inherited
 
@@ -77,123 +102,64 @@ Inferred structure is always labelled as inference. NDOS distinguishes what it
 **observed**, what it **computed**, and what it **guessed**, and never presents
 one as another.
 
-### `ndos_table.py` — get lab metadata in, via the tool you already use
+### `ndos_scan.py` — read-only inventory
 
-Scanning reveals what is on disk. It cannot reveal which animal a recording
-came from, what was injected, or when. That knowledge lives in a notebook or
-an Excel sheet, so NDOS meets it there.
-
-```bash
-python3 ndos_table.py export manifest.json -d metadata/   # build the sheets
-# ... open them in Excel and fill in the blanks ...
-python3 ndos_table.py check metadata/ --emit linked.json
-```
-
-Metadata lives in **three linked tables**, because a fact recorded once should
-govern every session it applies to:
-
-| File | One row per | Filled by |
-| --- | --- | --- |
-| `animals.csv` | animal — species, strain, sex, date of birth, genotype | you, once per animal |
-| `procedures.csv` | surgery, injection, implant, drug, training | you; NDOS cannot observe a surgery, so it never touches this file |
-| `sessions.csv` | recording session — date, task, QC | NDOS pre-fills what it observed; you add the rest |
-
-`animals.csv` is seeded with the subject names NDOS found in your folder tree,
-so you start with rows rather than a blank sheet. Sessions are regenerated on
-every export with observed columns refreshed and typed-in values carried
-across; a row that disappears is reported rather than silently taking its
-metadata with it.
-
-**Intervals are computed, never typed.** Because a procedure has a date and a
-session has a date, NDOS derives `days_since_injection`, `days_since_implant`,
-`age_days`, and so on. These carry the status `computed`, so they are never
-mistaken for something a person asserted — and they make "recorded three to
-five weeks after the injection" a query you can actually run.
-
-Entry is forgiving, validation is strict. `mouse`, `Mouse`, and `mice` all
-resolve to `mus musculus`; `ephys` to `electrophysiology`; `viral injection`
-to `injection`; `female` to `F`. What you typed is preserved beside the mapped
-value so the mapping can be audited. But `21/03/2025` is refused, because
-`03/04/2025` means 3 April in the UK and 4 March in the US and guessing would
-silently corrupt a date.
-
-Validation spans the tables, not just each file: a session naming an animal
-with no row, or a procedure for a subject nobody described, is reported as a
-broken link.
-
-A blank cell and the word `unknown` mean different things, and NDOS keeps them
-apart: blank means nobody has filled it in yet, `unknown` means somebody
-checked and could not determine it. `--emit` writes evidence-typed records
-against [`schemas/session_metadata.schema.json`](schemas/session_metadata.schema.json).
-
-### `ndos_query.py` — build a cohort, and see why each session qualified
+Produces a versioned JSON manifest: every file with its path, size,
+modification time, and SHA-256 digest, plus an explicit list of everything
+skipped and why.
 
 ```bash
-python3 ndos_query.py metadata.json -w species=mouse -w sex=F \
-    -w 'target_region=CA1' -w 'session_date>=2025-03-01' \
-    -w 'modalities~electrophysiology' \
-    --save-cohort cohort.json --name ca1-ephys-spring-2025
+python3 ndos_scan.py /path/to/data --output manifest.json
+python3 ndos_scan.py /path/to/data --no-checksum        # faster, no dedup
+python3 ndos_scan.py /path/to/data --exclude '*.tmp'
 ```
 
-Operators are `=` `!=` `>` `<` `>=` `<=` and `~` (contains). `field=*` requires
-any value; `field=?` finds values recorded as unknown. Queries are normalised
-the same way the data was, so `species=mouse` finds sessions recorded as
-`mus musculus`, and the report shows you that substitution.
+The manifest is the input to every other NDOS module, so a slow checksummed
+scan only has to happen once. The output contract is versioned in
+[`schemas/manifest.schema.json`](schemas/manifest.schema.json).
 
-**Results come in three groups, not two.** A session whose sex was never
-recorded is not a non-match — it is an open question, and quietly dropping it
-biases the cohort in a way nobody sees. So NDOS reports:
+An inventory that quietly omits data is worse than no inventory, so
+unreadable directories, permission failures, and symlinks are recorded in a
+`skipped` list rather than silently dropped.
 
-| Group | Meaning |
-| --- | --- |
-| Matched | Every criterion satisfied, each citing the field, value, and evidence status it rests on |
-| **Cannot be ruled out** | Met everything checkable, but a deciding value was never recorded |
-| Excluded | Ruled out by evidence that *is* recorded |
+### `ndos_archive.py` — see inside archives without extracting them
 
-Unresolved sessions stay out of a saved cohort unless you pass
-`--include-unresolved`, and are labelled if you do.
+Labs zip their archives because the data is enormous. On a real lab drive,
+**88% to 100% of everything was inside `.zip` files**, which meant no
+inventory could describe any of it.
 
-**An empty result explains itself** rather than returning nothing. It names the
-constraint that eliminated the most sessions, and distinguishes "your query was
-too narrow" from "this column was never filled in" — which need opposite fixes.
-
-Cohorts are frozen with the full query plan against
-[`schemas/cohort.schema.json`](schemas/cohort.schema.json), including counts of
-what was excluded and what could not be decided, so a selection can be re-run,
-audited, or disputed later.
-
-### `ndos_tags.py` — validated, temporary, safe to delete
-
-The layout reserves `flagged_data/` and `temp/`, and the standard defines the
-flags that make them mean something:
-`{"validated": true, "temp": false, "deletable": false}`.
+This reads an archive's index rather than its contents, so a 300 GB collection
+can be catalogued without unpacking a byte:
 
 ```bash
-python3 ndos_tags.py set spikes.npy --validated --note "curated in Phy"
-python3 ndos_tags.py list ./project --flag temp
-python3 ndos_tags.py sweep ./project              # plan a cleanup
-python3 ndos_tags.py sweep ./project --apply      # after reading it
+python3 ndos_archive.py inspect /Volumes/archive -c archives.json
+python3 ndos_archive.py search archives.json '*.avi'
 ```
 
-Tags live in a `tags.json` beside the data they describe, one per session, so
-a session directory stays self-describing if it is moved or copied.
+Listings are cached and keyed on size and modification time. That matters: on
+a slow external drive the first read of a 2 GB archive took nearly a minute,
+and nobody should pay that twice.
 
-**A validated file is never swept**, whatever its other flags say, and marking
-something both validated and deletable is recorded as a conflict rather than
-resolved silently. `sweep` plans by default and deletes only on `--apply` with
-a confirmation: the manuscript imagines a maintenance script removing
-temporaries automatically, and deletion driven by a hand-edited flag is how a
-lab loses data it meant to keep.
+**Extraction is planned, then confirmed, then done.** Ask for what you want,
+see exactly what it would write and what it would cost, and only then say yes:
 
-Files that *look* like scratch but were never flagged are listed separately
-and only with `--include-untagged`, because nobody has vouched for them.
-Scratch is judged relative to the project root, so a project living under
-`/tmp` does not have all of its files called temporary.
+```bash
+python3 ndos_archive.py plan archives.json --dest ./work --name '*.avi'
+python3 ndos_archive.py extract archives.json --dest ./work --name '*.avi'
+```
 
-`ndos_organize` tags automatically: spike-sorting scratch is routed to
-`processed_data/<sub>/<ses>/temp/`, flagged `temp`, and recorded in that
-session's `derived_metadata.json` — so a sweep finds it later without anyone
-remembering which files were intermediates.
+The plan reports how many files, how many bytes, which already exist, and
+whether there is enough free space — refusing to start if there is not.
+Nothing is written until you confirm.
+
+**Members that would escape the destination are refused.** An archive can
+contain `../../etc/something`, and unpacking one you did not create is a real
+way to get files written where you did not intend. Those members are listed
+under REFUSED and never extracted.
+
+`.tar` and `.tar.gz` need `--include-tar`, because unlike a zip they must be
+streamed end to end to be listed, which on slow storage is expensive enough to
+be a deliberate choice.
 
 ### `ndos_organize.py` — rebuild the N-DOS layout from what already exists
 
@@ -276,44 +242,140 @@ its data once has the same recording in two places; on a real drive this was
 3.0 GB. Each file is linked once and the copies are listed, rather than
 appearing under invented names as though they were distinct.
 
-### `ndos_archive.py` — see inside archives without extracting them
+### `ndos_table.py` — get lab metadata in, via the tool you already use
 
-Labs zip their archives because the data is enormous. On a real lab drive,
-**88% to 100% of everything was inside `.zip` files**, which meant no
-inventory could describe any of it.
-
-This reads an archive's index rather than its contents, so a 300 GB collection
-can be catalogued without unpacking a byte:
+Scanning reveals what is on disk. It cannot reveal which animal a recording
+came from, what was injected, or when. That knowledge lives in a notebook or
+an Excel sheet, so NDOS meets it there.
 
 ```bash
-python3 ndos_archive.py inspect /Volumes/archive -c archives.json
-python3 ndos_archive.py search archives.json '*.avi'
+python3 ndos_table.py export manifest.json -d metadata/   # build the sheets
+# ... open them in Excel and fill in the blanks ...
+python3 ndos_table.py check metadata/ --emit linked.json
 ```
 
-Listings are cached and keyed on size and modification time. That matters: on
-a slow external drive the first read of a 2 GB archive took nearly a minute,
-and nobody should pay that twice.
+Metadata lives in **three linked tables**, because a fact recorded once should
+govern every session it applies to:
 
-**Extraction is planned, then confirmed, then done.** Ask for what you want,
-see exactly what it would write and what it would cost, and only then say yes:
+| File | One row per | Filled by |
+| --- | --- | --- |
+| `animals.csv` | animal — species, strain, sex, date of birth, genotype | you, once per animal |
+| `procedures.csv` | surgery, injection, implant, drug, training | you; NDOS cannot observe a surgery, so it never touches this file |
+| `sessions.csv` | recording session — date, task, QC | NDOS pre-fills what it observed; you add the rest |
+
+`animals.csv` is seeded with the subject names NDOS found in your folder tree,
+so you start with rows rather than a blank sheet. Sessions are regenerated on
+every export with observed columns refreshed and typed-in values carried
+across; a row that disappears is reported rather than silently taking its
+metadata with it.
+
+**Intervals are computed, never typed.** Because a procedure has a date and a
+session has a date, NDOS derives `days_since_injection`, `days_since_implant`,
+`age_days`, and so on. These carry the status `computed`, so they are never
+mistaken for something a person asserted — and they make "recorded three to
+five weeks after the injection" a query you can actually run.
+
+Entry is forgiving, validation is strict. `mouse`, `Mouse`, and `mice` all
+resolve to `mus musculus`; `ephys` to `electrophysiology`; `viral injection`
+to `injection`; `female` to `F`. What you typed is preserved beside the mapped
+value so the mapping can be audited. But `21/03/2025` is refused, because
+`03/04/2025` means 3 April in the UK and 4 March in the US and guessing would
+silently corrupt a date.
+
+Validation spans the tables, not just each file: a session naming an animal
+with no row, or a procedure for a subject nobody described, is reported as a
+broken link.
+
+A blank cell and the word `unknown` mean different things, and NDOS keeps them
+apart: blank means nobody has filled it in yet, `unknown` means somebody
+checked and could not determine it. `--emit` writes evidence-typed records
+against [`schemas/session_metadata.schema.json`](schemas/session_metadata.schema.json).
+
+### `ndos_tags.py` — validated, temporary, safe to delete
+
+The layout reserves `flagged_data/` and `temp/`, and the standard defines the
+flags that make them mean something:
+`{"validated": true, "temp": false, "deletable": false}`.
 
 ```bash
-python3 ndos_archive.py plan archives.json --dest ./work --name '*.avi'
-python3 ndos_archive.py extract archives.json --dest ./work --name '*.avi'
+python3 ndos_tags.py set spikes.npy --validated --note "curated in Phy"
+python3 ndos_tags.py list ./project --flag temp
+python3 ndos_tags.py sweep ./project              # plan a cleanup
+python3 ndos_tags.py sweep ./project --apply      # after reading it
 ```
 
-The plan reports how many files, how many bytes, which already exist, and
-whether there is enough free space — refusing to start if there is not.
-Nothing is written until you confirm.
+Tags live in a `tags.json` beside the data they describe, one per session, so
+a session directory stays self-describing if it is moved or copied.
 
-**Members that would escape the destination are refused.** An archive can
-contain `../../etc/something`, and unpacking one you did not create is a real
-way to get files written where you did not intend. Those members are listed
-under REFUSED and never extracted.
+**A validated file is never swept**, whatever its other flags say, and marking
+something both validated and deletable is recorded as a conflict rather than
+resolved silently. `sweep` plans by default and deletes only on `--apply` with
+a confirmation: the manuscript imagines a maintenance script removing
+temporaries automatically, and deletion driven by a hand-edited flag is how a
+lab loses data it meant to keep.
 
-`.tar` and `.tar.gz` need `--include-tar`, because unlike a zip they must be
-streamed end to end to be listed, which on slow storage is expensive enough to
-be a deliberate choice.
+Files that *look* like scratch but were never flagged are listed separately
+and only with `--include-untagged`, because nobody has vouched for them.
+Scratch is judged relative to the project root, so a project living under
+`/tmp` does not have all of its files called temporary.
+
+`ndos_organize` tags automatically: spike-sorting scratch is routed to
+`processed_data/<sub>/<ses>/temp/`, flagged `temp`, and recorded in that
+session's `derived_metadata.json` — so a sweep finds it later without anyone
+remembering which files were intermediates.
+
+### `ndos_query.py` — build a cohort, and see why each session qualified
+
+```bash
+python3 ndos_query.py metadata.json -w species=mouse -w sex=F \
+    -w 'target_region=CA1' -w 'session_date>=2025-03-01' \
+    -w 'modalities~electrophysiology' \
+    --save-cohort cohort.json --name ca1-ephys-spring-2025
+```
+
+Operators are `=` `!=` `>` `<` `>=` `<=` and `~` (contains). `field=*` requires
+any value; `field=?` finds values recorded as unknown. Queries are normalised
+the same way the data was, so `species=mouse` finds sessions recorded as
+`mus musculus`, and the report shows you that substitution.
+
+**Results come in three groups, not two.** A session whose sex was never
+recorded is not a non-match — it is an open question, and quietly dropping it
+biases the cohort in a way nobody sees. So NDOS reports:
+
+| Group | Meaning |
+| --- | --- |
+| Matched | Every criterion satisfied, each citing the field, value, and evidence status it rests on |
+| **Cannot be ruled out** | Met everything checkable, but a deciding value was never recorded |
+| Excluded | Ruled out by evidence that *is* recorded |
+
+Unresolved sessions stay out of a saved cohort unless you pass
+`--include-unresolved`, and are labelled if you do.
+
+**An empty result explains itself** rather than returning nothing. It names the
+constraint that eliminated the most sessions, and distinguishes "your query was
+too narrow" from "this column was never filled in" — which need opposite fixes.
+
+Cohorts are frozen with the full query plan against
+[`schemas/cohort.schema.json`](schemas/cohort.schema.json), including counts of
+what was excluded and what could not be decided, so a selection can be re-run,
+audited, or disputed later.
+
+### Declaring which data suits which analysis
+
+```bash
+python3 ndos_query.py linked.json --config analyses.json
+```
+
+```json
+{"analyses": [
+  {"name": "theta-power-CA1",
+   "requires": ["target_region=CA1", "days_since_injection>=21", "qc_status=pass"]}
+]}
+```
+
+Each analysis is a saved query, so the answer carries the same evidence rules:
+sessions that qualify, sessions that cannot be ruled out, and why nothing
+matched when nothing does.
 
 ### `ndos_prov.py` — record what produced a result
 
@@ -386,43 +448,6 @@ export can honestly claim conformance today.
 ready for NeuroConv or a lab script — and reports what is still missing
 (`species`, `sex`, `date_of_birth`) rather than inventing it.
 
-### Declaring which data suits which analysis
-
-```bash
-python3 ndos_query.py linked.json --config analyses.json
-```
-
-```json
-{"analyses": [
-  {"name": "theta-power-CA1",
-   "requires": ["target_region=CA1", "days_since_injection>=21", "qc_status=pass"]}
-]}
-```
-
-Each analysis is a saved query, so the answer carries the same evidence rules:
-sessions that qualify, sessions that cannot be ruled out, and why nothing
-matched when nothing does.
-
-### `ndos_scan.py` — read-only inventory
-
-Produces a versioned JSON manifest: every file with its path, size,
-modification time, and SHA-256 digest, plus an explicit list of everything
-skipped and why.
-
-```bash
-python3 ndos_scan.py /path/to/data --output manifest.json
-python3 ndos_scan.py /path/to/data --no-checksum        # faster, no dedup
-python3 ndos_scan.py /path/to/data --exclude '*.tmp'
-```
-
-The manifest is the input to every other NDOS module, so a slow checksummed
-scan only has to happen once. The output contract is versioned in
-[`schemas/manifest.schema.json`](schemas/manifest.schema.json).
-
-An inventory that quietly omits data is worse than no inventory, so
-unreadable directories, permission failures, and symlinks are recorded in a
-`skipped` list rather than silently dropped.
-
 ### `ndos_init.py` — start an NDOS project
 
 Creates a project profile and the directories NDOS owns. It does **not**
@@ -467,14 +492,14 @@ additionally validates generated manifests against the published schema.
 
 | Path | Contents |
 | --- | --- |
-| `ndos_scan.py` | Read-only inventory |
 | `ndos_report.py` | Inventory report |
-| `ndos_table.py` | Spreadsheet metadata round-trip |
-| `ndos_query.py` | Cohort queries with evidence citation |
-| `ndos_prov.py` | Run provenance and lineage tracing |
+| `ndos_scan.py` | Read-only inventory |
 | `ndos_archive.py` | Archive inspection and planned extraction |
 | `ndos_organize.py` | Rebuild the N-DOS layout from existing structure |
+| `ndos_table.py` | Linked metadata tables |
 | `ndos_tags.py` | Validation, temporary and deletion flags |
+| `ndos_query.py` | Cohort queries with evidence citation |
+| `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
