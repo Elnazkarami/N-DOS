@@ -424,3 +424,65 @@ class DerivedIntervalTests(unittest.TestCase):
         constraint = parse_constraint("days_since_surgery>=14")
         self.assertEqual(constraint["source"], "computed")
         self.assertEqual(parse_constraint("age_days>=60")["source"], "computed")
+
+
+class AnalysisConfigTests(unittest.TestCase):
+    """A project declaring which datasets suit which analyses."""
+
+    def _metadata(self):
+        def session(ndos_id, region, days):
+            return {
+                "ndos_id": ndos_id,
+                "observed": {"path": ndos_id, "file_count": 1, "bytes": 1,
+                             "modalities": ["Electrophysiology"]},
+                "declared": {},
+                "procedures": [
+                    {"procedure_id": "P1",
+                     "declared": {"target_region": {"value": region, "status": "declared"}}}
+                ],
+                "derived": {"days_since_injection": {"value": str(days), "status": "computed"}},
+            }
+        return {
+            "metadata_version": "0.1",
+            "session_count": 2,
+            "sessions": [
+                session("ndos-0000000001", "CA1", 28),
+                session("ndos-0000000002", "CA3", 28),
+            ],
+        }
+
+    def test_each_declared_analysis_reports_its_eligible_sessions(self):
+        from ndos_query import run_config
+
+        result = run_config(
+            self._metadata(),
+            {
+                "analyses": [
+                    {"name": "ca1-theta",
+                     "requires": ["target_region=CA1", "days_since_injection>=21"]},
+                    {"name": "any-ephys",
+                     "requires": ["modalities~electrophysiology"]},
+                ]
+            },
+        )
+
+        by_name = {entry["name"]: entry for entry in result["analyses"]}
+        self.assertEqual(by_name["ca1-theta"]["eligible"], ["ndos-0000000001"])
+        self.assertEqual(len(by_name["any-ephys"]["eligible"]), 2)
+
+    def test_an_analysis_with_no_eligible_sessions_explains_why(self):
+        from ndos_query import run_config
+
+        result = run_config(
+            self._metadata(),
+            {"analyses": [{"name": "impossible", "requires": ["target_region=V1"]}]},
+        )
+
+        entry = result["analyses"][0]
+        self.assertEqual(entry["eligible"], [])
+        self.assertTrue(entry["notes"])
+
+    def test_a_config_declaring_nothing_is_not_an_error(self):
+        from ndos_query import run_config
+
+        self.assertEqual(run_config(self._metadata(), {})["analyses"], [])

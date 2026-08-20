@@ -565,6 +565,65 @@ def render(result: Dict[str, Any], verbose: bool = False) -> str:
 # cli
 # --------------------------------------------------------------------------
 
+def run_config(metadata: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate the named analyses a project declares it can support.
+
+    The manuscript suggests a config declaring which datasets suit which
+    analyses. That is a set of saved queries, so it is one here too: each
+    analysis names its criteria and the result says which sessions qualify.
+    """
+    results = []
+    for analysis in config.get("analyses", []):
+        constraints = [parse_constraint(text) for text in analysis.get("requires", [])]
+        outcome = run_query(metadata, constraints)
+        results.append(
+            {
+                "name": analysis.get("name", "unnamed"),
+                "description": analysis.get("description", ""),
+                "requires": analysis.get("requires", []),
+                "counts": outcome["counts"],
+                "eligible": [row["ndos_id"] for row in outcome["matched"]],
+                "unresolved": [row["ndos_id"] for row in outcome["unresolved"]],
+                "notes": diagnose(outcome),
+            }
+        )
+    return {
+        "config_version": config.get("version", "0.1"),
+        "generated_at": ndos_scan._utc_iso(datetime.now(tz=timezone.utc).timestamp()),
+        "analyses": results,
+    }
+
+
+def render_config(result: Dict[str, Any]) -> str:
+    out: List[str] = []
+    add = out.append
+    add("=" * 72)
+    add("ANALYSIS SUITABILITY")
+    add("=" * 72)
+    if not result["analyses"]:
+        add("The config declares no analyses.")
+        return "\n".join(out) + "\n"
+    for analysis in result["analyses"]:
+        counts = analysis["counts"]
+        add("")
+        add(f"{analysis['name']}")
+        if analysis["description"]:
+            add(f"  {analysis['description']}")
+        add(f"  requires : {', '.join(analysis['requires']) or '(nothing)'}")
+        add(
+            f"  eligible : {counts['matched']} of {counts['considered']} sessions"
+            + (
+                f", {counts['unresolved']} undecidable"
+                if counts["unresolved"] else ""
+            )
+        )
+        for note in analysis["notes"]:
+            add(f"  note     : {note}")
+    add("")
+    add("-" * 72)
+    return "\n".join(out) + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Query NDOS session metadata and build a reproducible cohort.",
@@ -587,10 +646,26 @@ def main() -> int:
     parser.add_argument("-f", "--format", choices=("text", "json"), default="text")
     parser.add_argument("-o", "--output", type=Path, help="Write the report here")
     parser.add_argument("-v", "--verbose", action="store_true", help="List excluded sessions")
+    parser.add_argument(
+        "--config", type=Path, metavar="JSON",
+        help="Evaluate the named analyses declared in a project config",
+    )
     args = parser.parse_args()
 
     try:
         metadata = json.loads(args.metadata.read_text(encoding="utf-8"))
+        if args.config:
+            config = json.loads(args.config.read_text(encoding="utf-8"))
+            outcome = run_config(metadata, config)
+            rendered = (
+                json.dumps(outcome, indent=2) + "\n" if args.format == "json"
+                else render_config(outcome)
+            )
+            if args.output:
+                args.output.write_text(rendered, encoding="utf-8")
+            else:
+                print(rendered, end="")
+            return 0
         constraints = [parse_constraint(text) for text in args.where]
         result = run_query(metadata, constraints)
     except QueryError as error:

@@ -362,6 +362,47 @@ Records validate against
 [`schemas/provenance.schema.json`](schemas/provenance.schema.json) and follow
 the W3C PROV shape of an activity that *used* and *generated* artifacts.
 
+### `ndos_convert.py` — hand off to BIDS and NWB
+
+NDOS does not reimplement either standard. NWB conversion is solved by
+maintained tools, and rewriting it here would produce a worse converter nobody
+maintains. This prepares the handoff instead:
+
+```bash
+python3 ndos_convert.py bids ./project -d ./bids-export --write
+python3 ndos_convert.py nwb  ./project --metadata linked.json --save nwb-plan.json
+```
+
+`bids` builds a BIDS-shaped tree of links with `dataset_description.json`,
+`participants.tsv` and per-file sidecars, mapping N-DOS entities onto BIDS
+ones — `A0634` → `sub-A0634`, `20201122` → `ses-20201122`, and the
+discriminator onto `acq-`. Scratch in `temp/` is never published.
+
+**It is BIDS-shaped, not validated BIDS**, and says so in its own output.
+Animal electrophysiology is covered by BEP032, which is not finalised, so no
+export can honestly claim conformance today.
+
+`nwb` emits a conversion plan with metadata already mapped onto NWB's fields,
+ready for NeuroConv or a lab script — and reports what is still missing
+(`species`, `sex`, `date_of_birth`) rather than inventing it.
+
+### Declaring which data suits which analysis
+
+```bash
+python3 ndos_query.py linked.json --config analyses.json
+```
+
+```json
+{"analyses": [
+  {"name": "theta-power-CA1",
+   "requires": ["target_region=CA1", "days_since_injection>=21", "qc_status=pass"]}
+]}
+```
+
+Each analysis is a saved query, so the answer carries the same evidence rules:
+sessions that qualify, sessions that cannot be ruled out, and why nothing
+matched when nothing does.
+
 ### `ndos_scan.py` — read-only inventory
 
 Produces a versioned JSON manifest: every file with its path, size,
@@ -434,6 +475,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_archive.py` | Archive inspection and planned extraction |
 | `ndos_organize.py` | Rebuild the N-DOS layout from existing structure |
 | `ndos_tags.py` | Validation, temporary and deletion flags |
+| `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
