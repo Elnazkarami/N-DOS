@@ -66,7 +66,9 @@ class RecordTests(unittest.TestCase):
             (raw / "a.txt").write_text("changed", encoding="utf-8")
             second = record_run(command, inputs=[raw], outputs=[out], echo=False)
 
-            changes = {a["path"].split("/")[-1]: a["change"] for a in second["generated"]}
+            # Path.name rather than splitting on "/", which is not the
+            # separator on Windows.
+            changes = {Path(a["path"]).name: a["change"] for a in second["generated"]}
             self.assertEqual(changes.get("a_out.txt"), "modified")
             # b was rewritten identically, so it is not reported as changed.
             self.assertNotIn("b_out.txt", changes)
