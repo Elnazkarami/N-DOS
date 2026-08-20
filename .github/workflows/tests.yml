@@ -49,12 +49,13 @@ jobs:
       # bare interpreter. If this job fails, a dependency crept in.
       - name: Import and run every module with no packages installed
         run: |
-          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query"
+          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
           python ndos_table.py --help
           python ndos_query.py --help
+          python ndos_prov.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -67,6 +68,11 @@ jobs:
           # the query below has observed evidence to actually match against.
           python ndos_table.py check /tmp/metadata --emit /tmp/linked.json --include-empty
           python ndos_query.py /tmp/linked.json -w 'modalities~electrophysiology' -w 'file_count>=2'
+          # Provenance round trip: wrap a command, then trace its output back.
+          python ndos_prov.py run -d /tmp/prov -i /tmp/manifest.json -o /tmp/derived \
+            -- python -c "import pathlib;d=pathlib.Path('/tmp/derived');d.mkdir(exist_ok=True);(d/'r.txt').write_text('x')"
+          python ndos_prov.py list -d /tmp/prov
+          python ndos_prov.py trace /tmp/derived/r.txt -d /tmp/prov
 
   schema:
     name: validate schemas

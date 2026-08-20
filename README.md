@@ -162,6 +162,53 @@ Cohorts are frozen with the full query plan against
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
+### `ndos_prov.py` — record what produced a result
+
+Provenance normally goes uncaptured because capturing it means instrumenting
+analysis code, and nobody rewrites a working script to satisfy a data policy.
+So NDOS wraps the command instead:
+
+```bash
+python3 ndos_prov.py run --input raw/ --output processed/ \
+    -- python3 preprocess.py raw processed
+```
+
+Nothing about `preprocess.py` changes. NDOS checksums the inputs, watches the
+output directories before and after, records the git commit and environment,
+and writes a run record. The wrapped command's exit code passes through, so
+this composes inside existing shell scripts.
+
+Then walk backwards from any result to the data behind it:
+
+```bash
+python3 ndos_prov.py trace figures/figure1.svg
+```
+
+```
+figure1.svg
+└── → figure  [run-157f69ae502a]  2026-08-20T02:39:50Z
+      $ python3 scripts/make_figure.py processed figures
+    ├── M01_ses01_filtered.dat
+    │   └── → preprocess  [run-418c7c94596d]  2026-08-20T02:39:49Z
+    │         $ python3 scripts/preprocess.py raw processed
+    │       ├── M01_ses01.dat
+    │       │   [raw] not produced by any recorded run
+```
+
+**Failed runs are recorded too**, and marked. "This figure came from a script
+that exited 1" is exactly what someone needs warning about, so a partial
+output is captured rather than discarded.
+
+**Provenance never collects credentials.** Environment variables are recorded
+only when named explicitly with `--record-env`; capturing the whole
+environment would routinely bury API keys inside files meant to be shared.
+`--anonymous` additionally omits hostname and username, for provenance you
+intend to publish.
+
+Records validate against
+[`schemas/provenance.schema.json`](schemas/provenance.schema.json) and follow
+the W3C PROV shape of an activity that *used* and *generated* artifacts.
+
 ### `ndos_scan.py` — read-only inventory
 
 Produces a versioned JSON manifest: every file with its path, size,
@@ -230,6 +277,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_report.py` | Inventory report |
 | `ndos_table.py` | Spreadsheet metadata round-trip |
 | `ndos_query.py` | Cohort queries with evidence citation |
+| `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
