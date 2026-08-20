@@ -195,6 +195,29 @@ planned and confirmed the same way, and `move` says plainly that it relocates
 your data. Every apply writes `.ndos-layout-log.json`, and `undo` reverses it —
 including moving files back.
 
+**Filenames follow the manuscript's conventions**, `SubjectID_SessionID_type`:
+
+```
+A0634_20201122_video-0.avi        A0634_20201122_raw-info.rhd
+A0634_20201122_position-Take-2020-11-22-06.32.30-PM.csv
+A0634_20201122_experimenter-notes.csv
+```
+
+The data type comes from the file itself — its extension, then its name — and
+never from the directories above it, which decide the *role* instead. Where no
+standard type applies, the original descriptor is kept (`_analogin.dat`)
+rather than forcing a file into a category it may not belong to: a confident
+wrong label is worse than an unfamiliar one, because the filename is what
+everyone reads first. Pass `--keep-original-names` to skip renaming entirely.
+
+Because the default mode is links, renaming costs nothing and risks nothing:
+the link carries the standard name while the file it points at keeps its own.
+
+**Sessions are clustered, not split.** A miniscope starting at 18:32:25 and an
+Intan at 18:32:20 are one recording, not two. Acquisition times within ten
+minutes are treated as one session; genuinely separate recordings on a day
+become `YYYYMMDD_01` and `_02`.
+
 **Every placement explains itself:**
 
 ```

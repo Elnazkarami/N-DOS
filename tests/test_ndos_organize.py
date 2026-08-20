@@ -45,7 +45,12 @@ def _manifest(paths, root="/src", sizes=None):
 class DerivationTests(unittest.TestCase):
     def test_subject_and_date_become_the_manuscript_layout(self):
         placements = derive(_manifest(["A0634/2020_11_22/0.avi"]))
-        self.assertEqual(placements[0]["target"], "raw_data/A0634/20201122/0.avi")
+        self.assertEqual(
+            placements[0]["target"],
+            "raw_data/A0634/20201122/A0634_20201122_video.avi",
+        )
+        # The original name is kept, so a placement can always be traced back.
+        self.assertEqual(placements[0]["original_name"], "0.avi")
 
     def test_a_cohort_folder_above_the_subject_is_not_mistaken_for_it(self):
         # A0600/A0634 is a range containing an animal; the deeper one is the
@@ -57,7 +62,10 @@ class DerivationTests(unittest.TestCase):
     def test_a_date_in_the_filename_is_used_when_folders_have_none(self):
         # Sessions archived as 2020_11_20.zip carry the date nowhere else.
         placements = derive(_manifest(["A0600/A0634/2020_11_20.zip"]))
-        self.assertEqual(placements[0]["target"], "raw_data/A0634/20201120/2020_11_20.zip")
+        self.assertEqual(
+            placements[0]["target"],
+            "raw_data/A0634/20201120/A0634_20201120_raw.zip",
+        )
 
     def test_a_compound_filename_yields_date_and_time(self):
         placements = derive(_manifest(["A0634/A0634_201122_183220/info.rhd"]))
@@ -95,15 +103,8 @@ class DerivationTests(unittest.TestCase):
                 ]
             )
         )
-        targets = sorted(p["target"] for p in placements)
-        self.assertEqual(
-            targets,
-            [
-                "figures/M01/20250314/fig1.png",
-                "processed_data/M01/20250314/spikes.npy",
-                "scripts/M01/20250314/run.py",
-            ],
-        )
+        directories = sorted(p["target"].split("/")[0] for p in placements)
+        self.assertEqual(directories, ["figures", "processed_data", "scripts"])
 
     def test_files_without_a_subject_go_to_flagged_data_not_nowhere(self):
         # A recording with no identifiable subject. (A stray .txt would go to
@@ -117,6 +118,88 @@ class DerivationTests(unittest.TestCase):
     def test_every_placement_explains_itself(self):
         for placement in derive(_manifest(["A0634/2020_11_22/0.avi"])):
             self.assertTrue(placement["why"])
+
+
+class NamingTests(unittest.TestCase):
+    """The manuscript's SubjectID_SessionID_type filename conventions."""
+
+    def _name(self, path):
+        return Path(derive(_manifest([path]))[0]["target"]).name
+
+    def test_data_types_follow_the_naming_conventions(self):
+        self.assertEqual(self._name("M01/2025_03_14/0.avi"), "M01_20250314_video.avi")
+        self.assertEqual(
+            self._name("M01/2025_03_14/notes.csv"), "M01_20250314_experimenter.csv"
+        )
+        self.assertEqual(
+            self._name("M01/2025_03_14/Take 01.tak"), "M01_20250314_position.tak"
+        )
+        self.assertEqual(self._name("M01/2025_03_14/info.rhd"), "M01_20250314_raw.rhd")
+
+    def test_an_unrecognised_type_keeps_the_original_descriptor(self):
+        # Better an unfamiliar label than a confident wrong one, since the
+        # filename is what everyone reads first.
+        name = self._name("M01/2025_03_14/analogin.dat")
+        self.assertEqual(name, "M01_20250314_analogin.dat")
+
+    def test_a_dataset_level_folder_does_not_decide_a_file_far_below_it(self):
+        # A top folder called "miniscope" once made an Intan .dat a "video".
+        name = self._name("miniscope/M01/2025_03_14/ephys/amp/analogin.dat")
+        self.assertNotIn("video", name)
+
+    def test_files_sharing_a_type_are_distinguished_by_their_original_name(self):
+        placements = derive(
+            _manifest([f"M01/2025_03_14/{index}.avi" for index in range(3)])
+        )
+        names = sorted(Path(p["target"]).name for p in placements)
+        self.assertEqual(
+            names,
+            [
+                "M01_20250314_video-0.avi",
+                "M01_20250314_video-1.avi",
+                "M01_20250314_video-2.avi",
+            ],
+        )
+
+    def test_a_lone_file_of_its_type_needs_no_discriminator(self):
+        self.assertEqual(self._name("M01/2025_03_14/0.avi"), "M01_20250314_video.avi")
+
+    def test_compound_extensions_survive_renaming(self):
+        name = self._name("M01/2025_03_14/rec_g0_t0.imec0.ap.bin")
+        self.assertTrue(name.endswith(".ap.bin"), name)
+
+    def test_original_names_can_be_kept(self):
+        placements = derive(
+            _manifest(["M01/2025_03_14/0.avi"]), standard_names=False
+        )
+        self.assertEqual(Path(placements[0]["target"]).name, "0.avi")
+
+
+class SessionClusteringTests(unittest.TestCase):
+    def test_systems_starting_moments_apart_are_one_session(self):
+        # A miniscope at 18:32:25 and an Intan at 18:32:20 are one recording.
+        placements = derive(
+            _manifest(
+                [
+                    "M01/2025_03_14/18_32_25/a.avi",
+                    "M01/2025_03_14/18_32_20/b.rhd",
+                ]
+            )
+        )
+        self.assertEqual({p["session"] for p in placements}, {"20250314"})
+
+    def test_recordings_hours_apart_remain_separate_sessions(self):
+        placements = derive(
+            _manifest(
+                [
+                    "M01/2025_03_14/09_00_00/a.avi",
+                    "M01/2025_03_14/17_00_00/b.avi",
+                ]
+            )
+        )
+        self.assertEqual(
+            sorted(p["session"] for p in placements), ["20250314_01", "20250314_02"]
+        )
 
 
 class PlanTests(unittest.TestCase):

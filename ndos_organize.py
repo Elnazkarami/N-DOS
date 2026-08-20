@@ -132,6 +132,36 @@ TIME_PATTERN = re.compile(r"^(\d{2})[-_.](\d{2})[-_.](\d{2})$")
 #: range, as in A0600/A0634. The deeper one is the animal.
 COHORT_HINT = re.compile(r"^[A-Za-z]{1,4}\d{2,6}$")
 
+#: Data-type suffixes named in the manuscript's naming conventions. Matched
+#: on the filename and on the directories above it, most specific first: a
+#: file called lfp.dat is LFP, not generic raw electrophysiology.
+TYPE_RULES: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
+    # (type, filename/path keywords, extensions)
+    ("spikes", ("spike", "cluster", "sorted", "kilosort", "phy", "mountainsort"), (".kwik", ".kwx")),
+    ("lfp", ("lfp", "localfield", ".lf."), ()),
+    ("position", ("position", "tracking", "optitrack", "take", "dlc", "deeplabcut", "pose"), (".tak", ".c3d", ".trc", ".anc", ".bvh")),
+    ("task", ("task", "maze", "reward", "trial", "protocol"), ()),
+    ("behavior", ("behavior", "behaviour"), ()),
+    ("experimenter", ("experimenter", "keypress", "notes", "annotation"), ()),
+    ("video", ("video", "miniscope", "camera"), (".avi", ".mp4", ".mov", ".mkv")),
+    ("timestamps", ("timestamp", "timestamps"), ()),
+    ("raw", ("raw", "amplifier", "continuous"), (
+        ".rhd", ".rhs", ".ap", ".nev", ".ns5", ".ns6",
+        # A zipped session is still raw acquisition data.
+        ".zip", ".tar", ".tgz", ".tar.gz", ".gz",
+    )),
+)
+
+#: How many directory levels above a file may inform its data type.
+NEARBY_SEGMENTS = 3
+
+#: Recordings started within this many seconds are one session. Acquisition
+#: systems in the same rig start seconds apart; that is not two sessions.
+SESSION_GAP_SECONDS = 600
+
+#: Characters that have no place in a standardised name.
+UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
 #: Names like A0634_201122_183220: subject, then YYMMDD, then HHMMSS.
 COMPOUND_SEGMENT = re.compile(r"^[A-Za-z]{1,4}\d{2,6}[-_](\d{6})[-_](\d{6})$")
 
@@ -150,6 +180,11 @@ def _normalise_date(parts: Sequence[str]) -> Optional[str]:
     if not (1900 < year < 2200 and 1 <= month <= 12 and 1 <= day <= 31):
         return None
     return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def _seconds(time: str) -> int:
+    """HHMMSS as seconds past midnight."""
+    return int(time[:2]) * 3600 + int(time[2:4]) * 60 + int(time[4:6])
 
 
 def _find_subject(segments: Sequence[str]) -> Tuple[Optional[str], Optional[str]]:
@@ -266,6 +301,71 @@ def _find_role(segments: Sequence[str], category: str) -> Tuple[str, str]:
     return RAW, "no role stated; defaulting to raw"
 
 
+def _split_extension(name: str) -> Tuple[str, str]:
+    """Stem and suffix, keeping compound suffixes such as .ap.bin intact."""
+    lowered = name.lower()
+    for compound in (".tar.gz", ".tar.bz2", ".tar.xz", ".ap.bin", ".lf.bin", ".ap.meta", ".lf.meta"):
+        if lowered.endswith(compound):
+            return name[: -len(compound)], name[-len(compound):]
+    stem, dot, suffix = name.rpartition(".")
+    return (stem, dot + suffix) if dot else (name, "")
+
+
+def _data_type(name: str, segments: Sequence[str], extension: str) -> Tuple[str, bool]:
+    """The manuscript's data-type suffix for a file, and whether it is certain.
+
+    Determined by the file itself — its extension, then its name — and never
+    by the directories above it. Those decide the *role* (raw_data versus
+    processed_data), which is a separate question. Mixing the two gave the
+    same recording two different type labels depending on which copy of the
+    tree it sat in.
+
+    Falls back to a slug of the original name rather than forcing a file into
+    a standard type it may not be. A wrong label on a filename is worse than
+    an unfamiliar one, because it is what everyone reads first.
+    """
+    for label, _, extensions in TYPE_RULES:
+        if extension in extensions:
+            return label, True
+
+    lowered = name.lower()
+    for label, keywords, _ in TYPE_RULES:
+        if any(keyword in lowered for keyword in keywords):
+            return label, True
+
+    stem, _ = _split_extension(name)
+    slug = UNSAFE_NAME.sub("-", stem).strip("-.").lower()
+    return (slug or "data"), False
+
+
+def standard_name(
+    subject: str,
+    session: str,
+    name: str,
+    segments: Sequence[str],
+    extension: str,
+    discriminator: Optional[str] = None,
+) -> Tuple[str, str, bool]:
+    """`SubjectID_SessionID_type.ext`, as the manuscript's conventions specify.
+
+    Returns the name, the reason, and whether the type is a standard one.
+    """
+    data_type, confident = _data_type(name, segments, extension)
+    stem, suffix = _split_extension(name)
+    parts = f"{subject}_{session}_{data_type}"
+    # A discriminator only helps when the type is a shared standard label.
+    # Where the type was taken from the filename, repeating it would give
+    # names like M01_20250314_analogin-analogin.dat.
+    if discriminator and confident:
+        parts += f"-{UNSAFE_NAME.sub('-', discriminator).strip('-.')}"
+    reason = (
+        f"named {data_type!r} by the N-DOS conventions"
+        if confident
+        else f"no standard data type applies; kept {data_type!r} from the original name"
+    )
+    return parts + suffix, reason, confident
+
+
 def _target(
     role: str, subject: Optional[str], session: Optional[str], name: str
 ) -> Optional[str]:
@@ -281,7 +381,9 @@ def _target(
 
 
 def derive(
-    manifest: Dict[str, Any], strip_prefix: int = 0
+    manifest: Dict[str, Any],
+    strip_prefix: int = 0,
+    standard_names: bool = True,
 ) -> List[Dict[str, Any]]:
     """Decide where every file belongs, and say why.
 
@@ -327,7 +429,17 @@ def derive(
         if session.get("time"):
             times[key].add(session["time"])
 
-    placements = []
+    # Collapse times that are moments apart into one session.
+    groups: Dict[Tuple[str, str], List[List[str]]] = {}
+    for key, values in times.items():
+        clustered: List[List[str]] = []
+        for time in sorted(values):
+            if clustered and _seconds(time) - _seconds(clustered[-1][-1]) <= SESSION_GAP_SECONDS:
+                clustered[-1].append(time)
+            else:
+                clustered.append([time])
+        groups[key] = clustered
+
     for item in found:
         session = item["session"]
         subject = item["subject"]
@@ -338,27 +450,77 @@ def derive(
             session_id = session["label"]
         elif session and subject:
             date = session["date"]
-            known = sorted(times.get((subject, date), ()))
-            if len(known) <= 1:
+            clustered = groups.get((subject, date), [])
+            if len(clustered) <= 1:
                 # One recording that day, so the date alone identifies it.
                 session_id = _session_id(date)
+                if clustered and len(clustered[0]) > 1:
+                    reasons.append(
+                        f"acquisition times {', '.join(clustered[0])} are within "
+                        "minutes of each other, so they are one session"
+                    )
             elif session.get("time"):
-                number = known.index(session["time"]) + 1
+                number = next(
+                    index for index, group in enumerate(clustered, start=1)
+                    if session["time"] in group
+                )
                 session_id = _session_id(date, f"{number:02d}")
                 reasons.append(
-                    f"{len(known)} recordings on {date}; this is number {number} "
-                    f"by acquisition time {session['time']}"
+                    f"{len(clustered)} separate recordings on {date}; this is "
+                    f"number {number}, started {session['time']}"
                 )
             else:
                 # A file that names the date but no time, on a day with
                 # several recordings. Which one it belongs to is unknown.
                 session_id = None
                 reasons.append(
-                    f"{len(known)} recordings on {date} and this path gives no "
-                    "time, so which session it belongs to cannot be determined"
+                    f"{len(clustered)} separate recordings on {date} and this "
+                    "path gives no time, so which one it belongs to cannot be "
+                    "determined"
                 )
 
-        target = _target(item["role"], subject, session_id, item["name"])
+        item["session_id"] = session_id
+        item["reasons"] = reasons
+        item["subject_final"] = subject
+
+    if standard_names:
+        # How many files of each type land in one session, so a discriminator
+        # is added only where it is genuinely needed.
+        counts: Counter = Counter()
+        for item in found:
+            if item["subject_final"] and item.get("session_id"):
+                proposed, _, _ = standard_name(
+                    item["subject_final"], item["session_id"], item["name"],
+                    item["entry"]["path"].split("/")[:-1], item["entry"]["extension"],
+                )
+                item["proposed"] = proposed
+                counts[(item["subject_final"], item["session_id"], proposed)] += 1
+
+    placements = []
+    for item in found:
+        subject = item["subject_final"]
+        session_id = item.get("session_id")
+        reasons = item["reasons"]
+        filename = item["name"]
+
+        if standard_names and subject and session_id:
+            proposed = item.get("proposed")
+            crowded = counts[(subject, session_id, proposed)] > 1
+            discriminator = _split_extension(filename)[0] if crowded else None
+            filename, naming_reason, confident = standard_name(
+                subject, session_id, item["name"],
+                item["entry"]["path"].split("/")[:-1], item["entry"]["extension"],
+                discriminator=discriminator,
+            )
+            reasons.append(naming_reason)
+            if crowded and confident:
+                reasons.append(
+                    f"several files share this type in the session, so the "
+                    f"original name {_split_extension(item['name'])[0]!r} "
+                    "distinguishes it"
+                )
+
+        target = _target(item["role"], subject, session_id, filename)
         if target is None:
             missing = "subject" if not subject else "session"
             target = f"{FLAGGED}/{item['entry']['path']}"
@@ -376,6 +538,7 @@ def derive(
                 "role": item["role"],
                 "category": item["category"],
                 "size_bytes": item["entry"]["size_bytes"],
+                "original_name": item["name"],
                 "placed": not target.startswith(f"{FLAGGED}/"),
                 "why": reasons,
             }
@@ -392,11 +555,14 @@ def build_plan(
     destination: Path,
     mode: str = "link",
     strip_prefix: int = 0,
+    standard_names: bool = True,
 ) -> Dict[str, Any]:
     """A complete, reviewable description of the tree that would be built."""
     source_root = Path(manifest["source_root"])
     destination = destination.expanduser().resolve()
-    placements = derive(manifest, strip_prefix=strip_prefix)
+    placements = derive(
+        manifest, strip_prefix=strip_prefix, standard_names=standard_names
+    )
 
     by_source = {entry["path"]: entry for entry in manifest["files"]}
     seen: Dict[str, Dict[str, Any]] = {}
@@ -779,7 +945,8 @@ def _load_manifest(source: Path, quiet: bool) -> Dict[str, Any]:
 def command_plan(args: argparse.Namespace) -> int:
     manifest = _load_manifest(args.source, args.quiet)
     plan = build_plan(
-        manifest, args.dest, mode=args.mode, strip_prefix=args.strip
+        manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
+        standard_names=not args.keep_original_names,
     )
     rendered = (
         json.dumps(plan, indent=2) + "\n" if args.format == "json"
@@ -802,7 +969,10 @@ def command_apply(args: argparse.Namespace) -> int:
         plan = json.loads(args.plan_file.read_text(encoding="utf-8"))
     else:
         manifest = _load_manifest(args.source, args.quiet)
-        plan = build_plan(manifest, args.dest, mode=args.mode, strip_prefix=args.strip)
+        plan = build_plan(
+            manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
+            standard_names=not args.keep_original_names,
+        )
 
     print(render_plan(plan), end="")
 
@@ -891,6 +1061,10 @@ def main() -> int:
             "--strip", type=int, default=0, metavar="N",
             help="Ignore the first N directory levels when reading structure",
         ),
+        p.add_argument(
+            "--keep-original-names", action="store_true",
+            help="Do not apply the N-DOS SubjectID_SessionID_type naming",
+        ),
         p.add_argument("-q", "--quiet", action="store_true"),
     )
 
@@ -908,6 +1082,7 @@ def main() -> int:
         "-m", "--mode", choices=("link", "copy", "move"), default="link"
     )
     apply_parser.add_argument("--strip", type=int, default=0)
+    apply_parser.add_argument("--keep-original-names", action="store_true")
     apply_parser.add_argument("--plan-file", type=Path, help="A plan saved earlier")
     apply_parser.add_argument("--yes", action="store_true", help="Skip the confirmation")
     apply_parser.add_argument("--force", action="store_true", help="Proceed despite low space")
