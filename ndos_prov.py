@@ -440,7 +440,10 @@ def render_list(records: Sequence[Dict[str, Any]]) -> str:
         add("No runs recorded yet.")
         add("")
         add("Wrap a command to record one:")
-        add("  python3 ndos_prov.py run --input raw/ --output results/ -- python analyse.py")
+        add(
+            f"  {ndos_scan.invocation('ndos_prov')} run --input raw/ "
+            "--output results/ -- python analyse.py"
+        )
         return "\n".join(out) + "\n"
 
     for record in records:
@@ -466,7 +469,8 @@ def command_run(args: argparse.Namespace) -> int:
     if not args.command:
         print(
             "Nothing to run. Put the command after -- , for example:\n"
-            "  python3 ndos_prov.py run --output results/ -- python analyse.py",
+            f"  {ndos_scan.invocation('ndos_prov')} run --output results/ "
+            "-- python analyse.py",
             file=sys.stderr,
         )
         return 2

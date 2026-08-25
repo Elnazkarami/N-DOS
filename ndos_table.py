@@ -997,7 +997,8 @@ def command_export(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
         print(
-            f"Fill these in, then run: python3 ndos_table.py check {args.dir}",
+            f"Fill these in, then run: "
+            f"{ndos_scan.invocation('ndos_table')} check {args.dir}",
             file=sys.stderr,
         )
     return 0

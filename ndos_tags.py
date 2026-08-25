@@ -305,7 +305,7 @@ def render_list(entries: Sequence[Dict[str, Any]], root: Path) -> str:
     if not entries:
         add("")
         add("No tags recorded yet. Flag something with:")
-        add("  python3 ndos_tags.py set FILE --validated")
+        add(f"  {ndos_scan.invocation('ndos_tags')} set FILE --validated")
         return "\n".join(out) + "\n"
 
     add("")
