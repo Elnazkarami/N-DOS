@@ -380,3 +380,27 @@ class CacheTests(unittest.TestCase):
 
             self.assertNotIn("extensions", manifest)
             self.assertEqual(list(base.glob("*.json")), [])
+
+    def test_a_read_too_fast_to_time_still_yields_a_rate(self):
+        from ndos_scan import estimate
+
+        # On a fast disk the sample finishes inside the clock's resolution.
+        # That means "very fast", not "unmeasurable", and returning None sent
+        # the CLI down a path telling the user nothing could be measured.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tiny.bin").write_bytes(b"x" * 64)
+
+            measured = estimate(root, sample_bytes=64)
+
+            self.assertIsNotNone(measured["bytes_per_second"])
+            self.assertGreater(measured["bytes_per_second"], 0)
+            self.assertIsNotNone(measured["seconds"])
+
+    def test_an_empty_directory_reports_no_rate_rather_than_dividing_by_zero(self):
+        from ndos_scan import estimate
+
+        with tempfile.TemporaryDirectory() as directory:
+            measured = estimate(Path(directory))
+            self.assertEqual(measured["file_count"], 0)
+            self.assertIsNone(measured["bytes_per_second"])

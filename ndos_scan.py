@@ -55,6 +55,10 @@ FLUSH_EVERY_SECONDS = 30.0
 #: a wall of output.
 PROGRESS_EVERY_SECONDS = 2.0
 
+#: Floor for a timed sample. Below this the clock, not the disk, is what was
+#: measured, so the resulting rate is reported as a lower bound.
+MINIMUM_SAMPLE_SECONDS = 1e-3
+
 
 def _utc_iso(timestamp: float) -> str:
     """Render a POSIX timestamp as a second-resolution UTC ISO 8601 string."""
@@ -436,18 +440,25 @@ def estimate(
         if read >= sample_bytes:
             break
         try:
-            start = time.monotonic()
+            # perf_counter, because monotonic's resolution on Windows is about
+            # 16 ms and a fast drive finishes the sample well inside that.
+            start = time.perf_counter()
             with path.open("rb") as stream:
                 while read < sample_bytes:
                     chunk = stream.read(CHUNK_SIZE)
                     if not chunk:
                         break
                     read += len(chunk)
-            elapsed += time.monotonic() - start
+            elapsed += time.perf_counter() - start
         except OSError:
             continue
 
-    rate = read / elapsed if elapsed > 0 and read else None
+    rate = None
+    if read:
+        # A read too quick to time is a very fast drive, not an unmeasurable
+        # one. Flooring the elapsed time makes the rate a lower bound, which
+        # is the honest direction to err for an estimate of how long to wait.
+        rate = read / max(elapsed, MINIMUM_SAMPLE_SECONDS)
     return {
         "root": str(root),
         "file_count": len(sizes),
