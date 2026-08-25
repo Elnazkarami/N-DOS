@@ -202,6 +202,71 @@ class SessionClusteringTests(unittest.TestCase):
         )
 
 
+class OverrideTests(unittest.TestCase):
+    """Telling NDOS where the subject and session are, when it cannot tell.
+
+    Real layouts exist that no heuristic will read correctly. A user who can
+    see the mistake has to be able to say so, or their only option is to stop.
+    """
+
+    LAYOUT = ["study7/cohortB/rat14/day3/rec.dat"]
+
+    def test_an_unreadable_layout_is_flagged_when_guessing(self):
+        placement = derive(_manifest(self.LAYOUT))[0]
+        self.assertFalse(placement["placed"])
+
+    def test_naming_the_levels_places_it_correctly(self):
+        placement = derive(
+            _manifest(self.LAYOUT), subject_depth=2, session_depth=3
+        )[0]
+
+        self.assertTrue(placement["placed"])
+        self.assertEqual(placement["subject"], "rat14")
+        self.assertEqual(placement["session"], "day3")
+        self.assertTrue(placement["target"].startswith("raw_data/rat14/day3/"))
+
+    def test_an_override_says_it_was_told_rather_than_guessed(self):
+        placement = derive(
+            _manifest(self.LAYOUT), subject_depth=2, session_depth=3
+        )[0]
+        self.assertIn("as you specified", " ".join(placement["why"]))
+
+    def test_a_named_session_level_holding_a_date_is_still_normalised(self):
+        placement = derive(
+            _manifest(["lab/M01/2025_03_14/rec.dat"]),
+            subject_depth=1, session_depth=2,
+        )[0]
+        # Told where to look, but the date is still read as a date.
+        self.assertEqual(placement["session"], "20250314")
+
+    def test_a_named_session_level_holding_a_compound_name_is_parsed(self):
+        placement = derive(
+            _manifest(["lab/A0634/A0634_201122_183220/rec.dat"]),
+            subject_depth=1, session_depth=2,
+        )[0]
+        self.assertEqual(placement["session"], "20201122")
+
+    def test_a_path_too_shallow_for_the_named_level_falls_back(self):
+        # A recording, not a note: notes go to metadata/ and need no subject.
+        placements = derive(
+            _manifest(["M01/2025_03_14/rec.dat", "loose.dat"]),
+            subject_depth=0, session_depth=1,
+        )
+        by_source = {p["source"]: p for p in placements}
+        self.assertEqual(by_source["M01/2025_03_14/rec.dat"]["subject"], "M01")
+        # Nothing at that level here; it is flagged, not crashed or mislabelled.
+        self.assertFalse(by_source["loose.dat"]["placed"])
+
+    def test_overrides_reach_the_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plan = build_plan(
+                _manifest(self.LAYOUT), Path(directory) / "out",
+                subject_depth=2, session_depth=3,
+            )
+            self.assertEqual(plan["placed_count"], 1)
+            self.assertEqual(plan["subjects"], ["rat14"])
+
+
 class PlanTests(unittest.TestCase):
     def test_a_plan_accounts_for_every_file(self):
         manifest = _manifest(["A0634/2020_11_22/0.avi", "loose.txt"])

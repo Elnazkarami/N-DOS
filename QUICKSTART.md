@@ -99,6 +99,16 @@ Subjects, sessions and dates are read from your existing folder and file names,
 and **every placement tells you why it was made**. Read the plan before you
 apply it — if a guess is wrong, that is where you will see it.
 
+When it does guess wrong, you can say where things actually are. Levels count
+from the top of the directory you scanned, starting at 0:
+
+```bash
+python3 ndos.py organize plan /path/to/your/data -d ./project \
+    --subject-depth 2 --session-depth 3
+```
+
+[RECIPES.md](RECIPES.md) works through the cases where this is needed.
+
 Files it cannot identify go to `flagged_data/` with their original structure
 and a note. Nothing is discarded.
 
@@ -207,6 +217,11 @@ python3 ndos.py report /tmp/messy-lab
 
 Nothing you have run above modified your data, so there is nothing to undo
 except a project directory you can delete.
+
+**[RECIPES.md](RECIPES.md) covers the common ones**: everything landing in
+`flagged_data/`, the wrong folder being read as the subject, a session split in
+two, a scan that will not finish, and how to prove for yourself that nothing
+was altered.
 
 Please report what happened: <https://github.com/Elnazkarami/N-DOS-/issues>.
 A wrong guess about your folder structure is a useful bug — it means the rules
