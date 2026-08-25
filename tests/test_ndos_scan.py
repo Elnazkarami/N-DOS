@@ -5,6 +5,7 @@ explicitly: a scan must never alter the tree it is looking at, and it must
 never silently omit something it could not read.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -216,3 +217,166 @@ class InitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EstimateTests(unittest.TestCase):
+    """Knowing a scan will take three hours is worth a few seconds of reading."""
+
+    def _data(self, base: Path, count: int = 4, size: int = 200_000):
+        for index in range(count):
+            (base / f"rec{index}.bin").write_bytes(bytes(size))
+        return base
+
+    def test_an_estimate_measures_rather_than_guesses(self):
+        from ndos_scan import estimate
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._data(Path(directory))
+            measured = estimate(root, sample_bytes=100_000)
+
+            self.assertEqual(measured["file_count"], 4)
+            self.assertEqual(measured["total_bytes"], 800_000)
+            self.assertGreater(measured["bytes_per_second"], 0)
+            self.assertIsNotNone(measured["seconds"])
+
+    def test_an_estimate_discounts_what_is_already_cached(self):
+        from ndos_scan import estimate
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            data = base / "data"
+            data.mkdir()
+            root = self._data(data)
+            cache = base / "cache.json"
+
+            scan(root, cache_path=cache)
+            measured = estimate(root, sample_bytes=100_000, cache_path=cache)
+
+            # Everything is cached, so nothing remains to read.
+            self.assertEqual(measured["remaining_bytes"], 0)
+            self.assertEqual(measured["cached_count"], 4)
+
+    def test_durations_are_rendered_in_units_a_person_can_act_on(self):
+        from ndos_scan import _human_duration
+
+        self.assertEqual(_human_duration(45), "45s")
+        self.assertEqual(_human_duration(600), "10 min")
+        self.assertEqual(_human_duration(11250), "3h 07m")
+
+
+class CacheTests(unittest.TestCase):
+    """A cache that returned a stale checksum would corrupt everything downstream."""
+
+    def _data(self, base: Path):
+        root = base / "data"
+        root.mkdir()
+        (root / "a.bin").write_bytes(b"alpha" * 1000)
+        (root / "b.bin").write_bytes(b"beta" * 1000)
+        return root
+
+    def test_a_cached_scan_matches_an_uncached_one_exactly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = self._data(base)
+
+            fresh = scan(root)
+            scan(root, cache_path=base / "cache.json")
+            cached = scan(root, cache_path=base / "cache.json")
+
+            self.assertEqual(
+                {f["path"]: f["sha256"] for f in fresh["files"]},
+                {f["path"]: f["sha256"] for f in cached["files"]},
+            )
+
+    def test_the_second_scan_reuses_what_the_first_computed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = self._data(base)
+            cache = base / "cache.json"
+
+            first = scan(root, cache_path=cache)
+            second = scan(root, cache_path=cache)
+
+            self.assertEqual(first["extensions"]["cache"]["reused"], 0)
+            self.assertEqual(second["extensions"]["cache"]["reused"], 2)
+
+    def test_a_changed_file_is_re_read_not_served_from_cache(self):
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = self._data(base)
+            cache = base / "cache.json"
+            scan(root, cache_path=cache)
+
+            time.sleep(1.1)  # so the modification time genuinely differs
+            (root / "a.bin").write_bytes(b"rewritten entirely")
+            manifest = scan(root, cache_path=cache)
+
+            digest = {f["path"]: f["sha256"] for f in manifest["files"]}["a.bin"]
+            expected = hashlib.sha256(b"rewritten entirely").hexdigest()
+            self.assertEqual(digest, expected)
+            self.assertEqual(manifest["extensions"]["cache"]["reused"], 1)
+
+    def test_a_file_of_the_same_size_but_different_mtime_is_re_read(self):
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "data"
+            root.mkdir()
+            (root / "a.bin").write_bytes(b"first")
+            cache = base / "cache.json"
+            scan(root, cache_path=cache)
+
+            time.sleep(1.1)
+            (root / "a.bin").write_bytes(b"secnd")  # same length, new contents
+            manifest = scan(root, cache_path=cache)
+
+            digest = {f["path"]: f["sha256"] for f in manifest["files"]}["a.bin"]
+            self.assertEqual(digest, hashlib.sha256(b"secnd").hexdigest())
+
+    def test_a_corrupt_cache_is_ignored_rather_than_fatal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = self._data(base)
+            cache = base / "cache.json"
+            cache.write_text("{ not json at all", encoding="utf-8")
+
+            manifest = scan(root, cache_path=cache)
+
+            self.assertEqual(manifest["file_count"], 2)
+            self.assertEqual(manifest["extensions"]["cache"]["reused"], 0)
+
+    def test_a_cache_from_an_older_format_is_ignored(self):
+        from ndos_scan import load_cache
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            cache.write_text(
+                json.dumps({"cache_version": "0.0", "entries": {"a": {}}}),
+                encoding="utf-8",
+            )
+            self.assertEqual(load_cache(cache), {})
+
+    def test_the_cache_is_written_atomically(self):
+        from ndos_scan import save_cache
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            cache = base / "cache.json"
+            save_cache(cache, base, {"a.bin": {"size_bytes": 1, "sha256": "x" * 64}})
+
+            self.assertTrue(cache.is_file())
+            # No temporary file survives a completed write.
+            self.assertEqual(list(base.glob("*.tmp")), [])
+
+    def test_scanning_without_a_cache_writes_no_cache_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = self._data(base)
+
+            manifest = scan(root)
+
+            self.assertNotIn("extensions", manifest)
+            self.assertEqual(list(base.glob("*.json")), [])
