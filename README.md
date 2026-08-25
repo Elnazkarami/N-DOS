@@ -26,12 +26,18 @@ to be inventoried is often an acquisition PC where you are not allowed to
 install anything.
 
 ```bash
-git clone https://github.com/<your-org>/ndos.git
+git clone https://github.com/Elnazkarami/N-DOS-.git ndos
 cd ndos
-python3 ndos_report.py /path/to/your/data
+python3 ndos.py --help
+python3 ndos.py report /path/to/your/data
 ```
 
-A single module can also be copied on its own and run anywhere.
+Every module is also a standalone script — `python3 ndos_report.py ...` works
+identically, and a single file can be copied out and run on its own.
+
+If you would rather type `ndos report` than `python3 ndos.py report`, then
+`pip install -e .` adds the command and nothing else: there are no
+dependencies to install. **New here? Start with [QUICKSTART.md](QUICKSTART.md).**
 
 ---
 
@@ -52,13 +58,13 @@ that you approve first.
 Starting from a directory nobody understands:
 
 ```bash
-python3 ndos_report.py   /path/to/chaos                    # what is in here?
-python3 ndos_archive.py  inspect /path/to/chaos -c arch.json   # what is in the zips?
-python3 ndos_organize.py apply /path/to/chaos -d ./project  # build the N-DOS layout
-python3 ndos_table.py    export ./project -d ./metadata     # fill in what only you know
-python3 ndos_table.py    check  ./metadata --emit linked.json
-python3 ndos_query.py    linked.json -w species=mouse -w target_region=CA1
-python3 ndos_convert.py  bids ./project -d ./bids-export --write
+python3 ndos.py report   /path/to/chaos                     # what is in here?
+python3 ndos.py archive  inspect /path/to/chaos -c arch.json    # what is in the zips?
+python3 ndos.py organize apply /path/to/chaos -d ./project  # build the N-DOS layout
+python3 ndos.py table    export ./project -d ./metadata     # fill in what only you know
+python3 ndos.py table    check  ./metadata --emit linked.json
+python3 ndos.py query    linked.json -w species=mouse -w target_region=CA1
+python3 ndos.py convert  bids ./project -d ./bids-export --write
 ```
 
 Nothing in that sequence moves or modifies your data. The layout is built
@@ -492,6 +498,7 @@ additionally validates generated manifests against the published schema.
 
 | Path | Contents |
 | --- | --- |
+| `ndos.py` | One command dispatching to all of the below |
 | `ndos_report.py` | Inventory report |
 | `ndos_scan.py` | Read-only inventory |
 | `ndos_archive.py` | Archive inspection and planned extraction |

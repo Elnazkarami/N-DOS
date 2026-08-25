@@ -1,0 +1,53 @@
+# Installing NDOS is optional. Every module runs directly from a clone with no
+# install step and no dependencies, which is the point: the machine that most
+# needs inventorying is often an acquisition PC where you cannot install
+# anything. This file exists for people who would rather type `ndos` than
+# `python3 ndos.py`.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ndos"
+version = "0.1.0"
+description = "A BIDS-inspired framework for wet-lab and animal neuroscience data"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Elnaz Alikarami" }]
+keywords = [
+    "neuroscience", "electrophysiology", "data-management", "provenance",
+    "BIDS", "NWB", "research-data",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+# Deliberately empty, and enforced by a CI job that runs every module against
+# a bare interpreter. Adding one here would break the guarantee.
+dependencies = []
+
+[project.optional-dependencies]
+# Test-only. The suite skips schema checks when jsonschema is absent.
+test = ["jsonschema>=4"]
+
+[project.urls]
+Homepage = "https://github.com/Elnazkarami/N-DOS-"
+Repository = "https://github.com/Elnazkarami/N-DOS-"
+
+[project.scripts]
+ndos = "ndos:main"
+
+[tool.setuptools]
+py-modules = [
+    "ndos",
+    "ndos_scan", "ndos_report", "ndos_archive", "ndos_organize",
+    "ndos_table", "ndos_tags", "ndos_query", "ndos_prov",
+    "ndos_convert", "ndos_init",
+]

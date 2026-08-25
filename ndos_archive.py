@@ -508,7 +508,7 @@ def render_catalogue(catalogue: Dict[str, Any], limit: int = 12) -> str:
     add("")
     add("-" * 72)
     add("Search inside without extracting:")
-    add("  python3 ndos_archive.py search <cache.json> '*.avi'")
+    add(f"  {ndos_scan.invocation('ndos_archive')} search <cache.json> '*.avi'")
     add("-" * 72)
     return "\n".join(out) + "\n"
 
@@ -623,7 +623,10 @@ def command_search(args: argparse.Namespace) -> int:
     print()
     print("-" * 72)
     print("Still nothing extracted. To get these files:")
-    print(f"  python3 ndos_archive.py plan {args.cache} --dest DIR --name {args.pattern!r}")
+    print(
+        f"  {ndos_scan.invocation('ndos_archive')} plan {args.cache} "
+        f"--dest DIR --name {args.pattern!r}"
+    )
     print("-" * 72)
     return 0
 

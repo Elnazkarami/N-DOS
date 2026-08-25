@@ -214,6 +214,19 @@ def scan(
     }
 
 
+def invocation(module: str) -> str:
+    """How this was invoked, so printed hints match what the user typed.
+
+    Run through the `ndos` dispatcher, argv[0] is "ndos organize"; run
+    directly it is the script path. A hint telling someone to type a different
+    command from the one that just worked is a small but real papercut.
+    """
+    program = sys.argv[0]
+    if " " in program:
+        return program
+    return f"python3 {module}.py"
+
+
 def _human_bytes(count: int) -> str:
     size = float(count)
     for unit in ("B", "KB", "MB", "GB", "TB"):

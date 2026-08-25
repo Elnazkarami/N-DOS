@@ -1114,7 +1114,9 @@ def command_apply(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     if log_path:
-        print(f"Undo with: python3 ndos_organize.py undo {log_path}", file=sys.stderr)
+        print(f"Undo with: {ndos_scan.invocation('ndos_organize')} undo {log_path}",
+            file=sys.stderr,
+        )
     return 1 if log["failed"] else 0
 
 

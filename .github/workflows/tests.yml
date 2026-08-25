@@ -49,7 +49,9 @@ jobs:
       # bare interpreter. If this job fails, a dependency crept in.
       - name: Import and run every module with no packages installed
         run: |
-          python -c "import ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert"
+          python ndos.py --help
+          python ndos.py --version
+          python -c "import ndos, ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
@@ -95,6 +97,24 @@ jobs:
           test -f /tmp/bids/dataset_description.json
           test -f /tmp/bids/participants.tsv
           python ndos_convert.py nwb /tmp/project2
+
+  install:
+    name: optional pip install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Installing is optional, but when someone does it the `ndos` command
+      # must work and must still pull in nothing.
+      - run: python -m pip install --upgrade pip && pip install .
+      - run: ndos --help && ndos --version
+      - name: Confirm the install added no third-party packages
+        run: |
+          pip list --format=freeze --exclude-editable \
+            | grep -viE '^(ndos|pip|setuptools|wheel)==' \
+            && { echo "unexpected dependency installed"; exit 1; } || true
 
   schema:
     name: validate schemas
