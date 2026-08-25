@@ -45,6 +45,16 @@ On a slow external drive, add `--no-checksum` to get an answer in seconds.
 Checksums are what make duplicate detection possible, so run it without that
 flag when you can leave it going.
 
+Not sure how long that would take? Ask:
+
+```bash
+python3 ndos.py scan /path/to/your/data --estimate
+```
+
+If the answer is hours, add `--cache` to the scan. It saves checksums as it
+goes, so if you stop it — or your laptop sleeps — the next run carries on from
+where it left off instead of starting again.
+
 ## 2. What is inside the zip files?
 
 Most lab archives are mostly zips, and an inventory cannot see into them.

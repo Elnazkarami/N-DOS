@@ -66,7 +66,10 @@ jobs:
       - name: End-to-end run on the synthetic fixture
         run: |
           python tests/fixtures/make_messy_lab.py /tmp/messy-lab --force
-          python ndos_scan.py /tmp/messy-lab --output /tmp/manifest.json
+          python ndos_scan.py /tmp/messy-lab --estimate
+          # Scan twice with a cache: the second run must reuse the first.
+          python ndos_scan.py /tmp/messy-lab --cache /tmp/scan-cache.json --output /tmp/manifest.json
+          python ndos_scan.py /tmp/messy-lab --cache /tmp/scan-cache.json --output /tmp/manifest.json
           python ndos_report.py /tmp/manifest.json --format markdown -o /tmp/report.md
           cat /tmp/report.md
           python ndos_table.py export /tmp/manifest.json -d /tmp/metadata
