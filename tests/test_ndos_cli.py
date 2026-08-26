@@ -145,6 +145,44 @@ class PackagingTests(unittest.TestCase):
         on_disk = {path.stem for path in ROOT.glob("ndos*.py")}
         self.assertEqual(on_disk - declared, set())
 
+    def test_the_two_version_strings_agree(self):
+        try:
+            import tomllib
+        except ImportError:
+            self.skipTest("tomllib needs Python 3.11+")
+
+        content = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        # Releasing means bumping both by hand, and a mismatch would ship a
+        # package whose --version lies about which release it is.
+        self.assertEqual(content["project"]["version"], ndos.VERSION)
+
+    def test_the_citation_version_tracks_the_package(self):
+        import re
+
+        text = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+        match = re.search(r"^version:\s*(\S+)$", text, flags=re.M)
+        self.assertIsNotNone(match, "CITATION.cff has no version")
+        # Citing a version that was never released helps nobody.
+        self.assertEqual(match.group(1), ndos.VERSION)
+
+    def test_the_sdist_manifest_ships_the_standard_it_implements(self):
+        manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+        # Schemas are the published contracts; a source release without them
+        # would carry the implementation and not the thing implemented.
+        self.assertIn("recursive-include schemas *.json", manifest)
+        self.assertIn("QUICKSTART.md", manifest)
+        self.assertIn("RECIPES.md", manifest)
+        # Superseded prototypes should not travel with a release.
+        self.assertIn("prune legacy", manifest)
+
+    def test_the_readme_has_no_relative_links_that_pypi_would_break(self):
+        import re
+
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        # PyPI renders the README on its own, where a relative link is a 404.
+        relative = re.findall(r"\]\((?!https?://|#)([^)]+\.(?:md|json))\)", text)
+        self.assertEqual(relative, [], f"relative links in README: {relative}")
+
     def test_the_console_script_points_at_the_dispatcher(self):
         try:
             import tomllib
@@ -153,6 +191,49 @@ class PackagingTests(unittest.TestCase):
 
         content = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertEqual(content["project"]["scripts"]["ndos"], "ndos:main")
+
+
+class IssueTemplateTests(unittest.TestCase):
+    """The first thing a user touches when something breaks.
+
+    The previous template asked people to choose between six modules that had
+    been removed, which is worse than having no template at all.
+    """
+
+    TEMPLATES = Path(".github/ISSUE_TEMPLATE")
+
+    def _files(self):
+        return sorted((ROOT / self.TEMPLATES).glob("*.yml"))
+
+    def test_templates_exist(self):
+        self.assertTrue(self._files(), "no issue templates")
+
+    def test_no_template_names_a_file_that_was_removed(self):
+        import re
+
+        for path in self._files():
+            text = path.read_text(encoding="utf-8")
+            for name in set(re.findall(r"\bndos[_a-z]*\.(?:py|R|sh)\b", text)):
+                self.assertTrue(
+                    (ROOT / name).is_file(),
+                    f"{path.name} refers to {name}, which is not in the repo",
+                )
+
+    def test_a_report_can_be_filed_without_sharing_any_data(self):
+        # Lab data is unpublished. If filing a bug seemed to require sending
+        # some, people would simply not file.
+        for path in self._files():
+            if path.name == "config.yml":
+                continue
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn(
+                "data", text,
+                f"{path.name} never addresses whether data must be shared",
+            )
+        combined = " ".join(
+            p.read_text(encoding="utf-8").lower() for p in self._files()
+        )
+        self.assertIn("you do not need to share any data", combined)
 
 
 class DocumentationTests(unittest.TestCase):

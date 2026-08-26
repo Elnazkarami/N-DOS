@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "NDOS: a framework for organising wet-lab and animal neuroscience data"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Alikarami
+    given-names: Elnaz
+repository-code: "https://github.com/Elnazkarami/N-DOS"
+abstract: >-
+  A BIDS-inspired standard and reference implementation for pre-publication
+  wet-lab and animal neuroscience data. NDOS reads archives without extracting
+  them, reconstructs a standard layout derived from whatever structure already
+  exists, captures metadata through the spreadsheets labs already use, answers
+  cohort queries with the evidence behind every match, records provenance from
+  a result back to raw data, and hands off to BIDS and NWB workflows.
+keywords:
+  - neuroscience
+  - electrophysiology
+  - research data management
+  - provenance
+  - BIDS
+  - NWB
+license: Apache-2.0
+version: 0.1.0

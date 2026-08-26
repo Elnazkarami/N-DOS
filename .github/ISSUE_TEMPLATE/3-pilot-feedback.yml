@@ -1,0 +1,71 @@
+name: Pilot feedback
+description: You tried NDOS on real lab data — how did it go?
+labels: ["pilot"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is what tells us whether NDOS is worth anyone's time. Blunt answers
+        are more useful than kind ones, and "I gave up at step 3" is a result.
+
+        **No data required.** Describe what you were doing, not what was in it.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to do?
+      placeholder: >-
+        Find every session from the animals injected in CA1 last spring, so I
+        could re-run an analysis on them.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Did you get there?
+      options:
+        - Yes
+        - Partly
+        - "No — I stopped"
+    validations:
+      required: true
+
+  - type: input
+    id: before
+    attributes:
+      label: How long would this normally have taken you?
+      placeholder: "half a day of clicking through folders / I would not have attempted it"
+
+  - type: input
+    id: after
+    attributes:
+      label: How long did it take with NDOS?
+      placeholder: "20 minutes, most of it waiting for the scan"
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where did you get stuck, confused, or annoyed?
+      description: >-
+        Including anything you had to ask someone about, or any point where you
+        were not sure whether it was safe to continue.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: trust
+    attributes:
+      label: Were you confident it would not damage your data?
+      options:
+        - "Yes, throughout"
+        - "Yes, after reading what it said it would do"
+        - "Not really — I worked on a copy"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: keep
+    attributes:
+      label: Would you use it again? What would have to change first?

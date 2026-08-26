@@ -35,10 +35,16 @@ python3 ndos.py report /path/to/your/data
 Every module is also a standalone script — `python3 ndos_report.py ...` works
 identically, and a single file can be copied out and run on its own.
 
-If you would rather type `ndos report` than `python3 ndos.py report`, then
-`pip install -e .` adds the command and nothing else: there are no
-dependencies to install. **New here? Start with [QUICKSTART.md](QUICKSTART.md).** When NDOS reads your
-data wrongly — and on some layout it will — [RECIPES.md](RECIPES.md) is what
+If you would rather type `ndos report` than `python3 ndos.py report`:
+
+```bash
+pip install ndos          # once published
+pip install -e .          # or from a clone
+```
+
+Either adds the command and nothing else — there are no dependencies to
+install, and CI fails the build if that ever stops being true. **New here? Start with [QUICKSTART.md](https://github.com/Elnazkarami/N-DOS/blob/main/QUICKSTART.md).** When NDOS reads your
+data wrongly — and on some layout it will — [RECIPES.md](https://github.com/Elnazkarami/N-DOS/blob/main/RECIPES.md) is what
 to do about it.
 
 ---
@@ -124,7 +130,7 @@ python3 ndos_scan.py /path/to/data --exclude '*.tmp'
 
 The manifest is the input to every other NDOS module, so a slow checksummed
 scan only has to happen once. The output contract is versioned in
-[`schemas/manifest.schema.json`](schemas/manifest.schema.json).
+[`schemas/manifest.schema.json`](https://github.com/Elnazkarami/N-DOS/blob/main/schemas/manifest.schema.json).
 
 An inventory that quietly omits data is worse than no inventory, so
 unreadable directories, permission failures, and symlinks are recorded in a
@@ -297,7 +303,7 @@ broken link.
 A blank cell and the word `unknown` mean different things, and NDOS keeps them
 apart: blank means nobody has filled it in yet, `unknown` means somebody
 checked and could not determine it. `--emit` writes evidence-typed records
-against [`schemas/session_metadata.schema.json`](schemas/session_metadata.schema.json).
+against [`schemas/session_metadata.schema.json`](https://github.com/Elnazkarami/N-DOS/blob/main/schemas/session_metadata.schema.json).
 
 ### `ndos_tags.py` — validated, temporary, safe to delete
 
@@ -364,7 +370,7 @@ constraint that eliminated the most sessions, and distinguishes "your query was
 too narrow" from "this column was never filled in" — which need opposite fixes.
 
 Cohorts are frozen with the full query plan against
-[`schemas/cohort.schema.json`](schemas/cohort.schema.json), including counts of
+[`schemas/cohort.schema.json`](https://github.com/Elnazkarami/N-DOS/blob/main/schemas/cohort.schema.json), including counts of
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
@@ -429,7 +435,7 @@ environment would routinely bury API keys inside files meant to be shared.
 intend to publish.
 
 Records validate against
-[`schemas/provenance.schema.json`](schemas/provenance.schema.json) and follow
+[`schemas/provenance.schema.json`](https://github.com/Elnazkarami/N-DOS/blob/main/schemas/provenance.schema.json) and follow
 the W3C PROV shape of an activity that *used* and *generated* artifacts.
 
 ### `ndos_convert.py` — hand off to BIDS and NWB
@@ -518,7 +524,7 @@ additionally validates generated manifests against the published schema.
 | `legacy/` | Superseded prototypes — **unsupported, they move files** |
 
 The `legacy/` code predates NDOS Core and restructures data in place. It is kept
-for reference only; see [`legacy/README.md`](legacy/README.md).
+for reference only; see [`legacy/README.md`](https://github.com/Elnazkarami/N-DOS/blob/main/legacy/README.md).
 
 ---
 
