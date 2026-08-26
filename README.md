@@ -37,7 +37,9 @@ identically, and a single file can be copied out and run on its own.
 
 If you would rather type `ndos report` than `python3 ndos.py report`, then
 `pip install -e .` adds the command and nothing else: there are no
-dependencies to install. **New here? Start with [QUICKSTART.md](QUICKSTART.md).**
+dependencies to install. **New here? Start with [QUICKSTART.md](QUICKSTART.md).** When NDOS reads your
+data wrongly — and on some layout it will — [RECIPES.md](RECIPES.md) is what
+to do about it.
 
 ---
 
@@ -499,6 +501,8 @@ additionally validates generated manifests against the published schema.
 | Path | Contents |
 | --- | --- |
 | `ndos.py` | One command dispatching to all of the below |
+| `QUICKSTART.md` | Fifteen minutes, for a lab member |
+| `RECIPES.md` | What to do when a guess is wrong |
 | `ndos_report.py` | Inventory report |
 | `ndos_scan.py` | Read-only inventory |
 | `ndos_archive.py` | Archive inspection and planned extraction |

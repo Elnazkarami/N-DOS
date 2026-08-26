@@ -293,6 +293,34 @@ def _find_session(
     return {"date": date}, f"folder {date_segment!r} reads as a date"
 
 
+def _parse_session_label(segment: str) -> Tuple[Dict[str, Any], str]:
+    """Read one directory name as a session, however it happens to be written.
+
+    A user pointing at a level is telling us *where* the session is, not what
+    shape it takes, so a date, a compound name and an arbitrary label all have
+    to work.
+    """
+    compound = COMPOUND_SEGMENT.match(segment)
+    if compound:
+        date = _normalise_date(
+            (compound.group(1)[:2], compound.group(1)[2:4], compound.group(1)[4:])
+        )
+        if date:
+            return {"date": date, "time": compound.group(2)}, "read as a date and time"
+    for pattern in DATE_PATTERNS:
+        match = pattern.match(segment)
+        if match:
+            date = _normalise_date(match.groups())
+            if date:
+                return {"date": date}, "read as a date"
+    for pattern in SESSION_PATTERNS:
+        match = pattern.match(segment)
+        if match:
+            return {"label": f"ses-{int(match.group(1)):02d}"}, "read as a session number"
+    # Not a shape we recognise, so it is used as written.
+    return {"label": UNSAFE_NAME.sub("-", segment).strip("-.")}, "used as written"
+
+
 def _find_role(segments: Sequence[str], category: str) -> Tuple[str, str]:
     """What the file is for: stated by the path if possible, else inferred."""
     lowered = [segment.lower() for segment in segments]
@@ -399,10 +427,19 @@ def _target(
     return f"{role}/{subject}/{session}/{name}"
 
 
+def _at_depth(directories: Sequence[str], depth: Optional[int]) -> Optional[str]:
+    """The directory name at a given level, if the path is that deep."""
+    if depth is None or depth < 0 or len(directories) <= depth:
+        return None
+    return directories[depth]
+
+
 def derive(
     manifest: Dict[str, Any],
     strip_prefix: int = 0,
     standard_names: bool = True,
+    subject_depth: Optional[int] = None,
+    session_depth: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Decide where every file belongs, and say why.
 
@@ -418,8 +455,30 @@ def derive(
         name = segments[-1]
         category = ndos_report.categorise(entry["extension"], name)
 
-        subject, subject_reason = _find_subject(directories)
-        session, session_reason = _find_session(directories, name)
+        # An explicit depth overrides the guess. Real layouts exist that no
+        # heuristic will read correctly, and a user who can see the mistake
+        # needs a way to say so.
+        forced_subject = _at_depth(directories, subject_depth)
+        if forced_subject is not None:
+            subject = forced_subject
+            subject_reason = f"folder {forced_subject!r} at level {subject_depth}, as you specified"
+        else:
+            subject, subject_reason = _find_subject(directories)
+            if subject_depth is not None:
+                subject_reason = (
+                    f"no level {subject_depth} in this path"
+                    + (f"; fell back to {subject_reason}" if subject_reason else "")
+                )
+
+        forced_session = _at_depth(directories, session_depth)
+        if forced_session is not None:
+            session, session_reason = _parse_session_label(forced_session)
+            session_reason = (
+                f"folder {forced_session!r} at level {session_depth}, as you "
+                f"specified ({session_reason})"
+            )
+        else:
+            session, session_reason = _find_session(directories, name)
         role, role_reason = _find_role(directories, category)
 
         found.append(
@@ -585,12 +644,18 @@ def build_plan(
     mode: str = "link",
     strip_prefix: int = 0,
     standard_names: bool = True,
+    subject_depth: Optional[int] = None,
+    session_depth: Optional[int] = None,
 ) -> Dict[str, Any]:
     """A complete, reviewable description of the tree that would be built."""
     source_root = Path(manifest["source_root"])
     destination = destination.expanduser().resolve()
     placements = derive(
-        manifest, strip_prefix=strip_prefix, standard_names=standard_names
+        manifest,
+        strip_prefix=strip_prefix,
+        standard_names=standard_names,
+        subject_depth=subject_depth,
+        session_depth=session_depth,
     )
 
     by_source = {entry["path"]: entry for entry in manifest["files"]}
@@ -1048,6 +1113,7 @@ def command_plan(args: argparse.Namespace) -> int:
     plan = build_plan(
         manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
         standard_names=not args.keep_original_names,
+        subject_depth=args.subject_depth, session_depth=args.session_depth,
     )
     rendered = (
         json.dumps(plan, indent=2) + "\n" if args.format == "json"
@@ -1073,6 +1139,7 @@ def command_apply(args: argparse.Namespace) -> int:
         plan = build_plan(
             manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
             standard_names=not args.keep_original_names,
+            subject_depth=args.subject_depth, session_depth=args.session_depth,
         )
 
     print(render_plan(plan), end="")
@@ -1165,6 +1232,14 @@ def main() -> int:
             help="Ignore the first N directory levels when reading structure",
         ),
         p.add_argument(
+            "--subject-depth", type=int, metavar="N",
+            help="The subject is the folder at level N, rather than guessing",
+        ),
+        p.add_argument(
+            "--session-depth", type=int, metavar="N",
+            help="The session is the folder at level N, rather than guessing",
+        ),
+        p.add_argument(
             "--keep-original-names", action="store_true",
             help="Do not apply the N-DOS SubjectID_SessionID_type naming",
         ),
@@ -1186,6 +1261,8 @@ def main() -> int:
     )
     apply_parser.add_argument("--strip", type=int, default=0)
     apply_parser.add_argument("--keep-original-names", action="store_true")
+    apply_parser.add_argument("--subject-depth", type=int, metavar="N")
+    apply_parser.add_argument("--session-depth", type=int, metavar="N")
     apply_parser.add_argument("--plan-file", type=Path, help="A plan saved earlier")
     apply_parser.add_argument("--yes", action="store_true", help="Skip the confirmation")
     apply_parser.add_argument("--force", action="store_true", help="Proceed despite low space")

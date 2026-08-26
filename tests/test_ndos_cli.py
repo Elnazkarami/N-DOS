@@ -155,15 +155,40 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(content["project"]["scripts"]["ndos"], "ndos:main")
 
 
-class QuickstartTests(unittest.TestCase):
-    def test_every_command_the_quickstart_names_exists(self):
+class DocumentationTests(unittest.TestCase):
+    """A documented command that does not exist is worse than no document."""
+
+    def _commands_named_in(self, filename: str):
         import re
 
-        text = (ROOT / "QUICKSTART.md").read_text(encoding="utf-8")
+        text = (ROOT / filename).read_text(encoding="utf-8")
+        return set(re.findall(r"ndos\.py (\w+)", text))
+
+    def test_every_command_the_docs_name_exists(self):
         known = {name for name, _, _ in COMMANDS}
-        used = set(re.findall(r"ndos\.py (\w+)", text))
-        unknown = used - known
-        self.assertEqual(unknown, set(), f"quickstart names unknown commands: {unknown}")
+        for filename in ("QUICKSTART.md", "RECIPES.md", "README.md"):
+            unknown = self._commands_named_in(filename) - known
+            self.assertEqual(
+                unknown, set(), f"{filename} names unknown commands: {unknown}"
+            )
+
+    def test_the_recipes_cover_the_failure_people_actually_hit(self):
+        text = (ROOT / "RECIPES.md").read_text(encoding="utf-8")
+        # The override flags exist because these situations do; if a flag is
+        # ever renamed, the document that tells people to use it must follow.
+        for flag in ("--subject-depth", "--session-depth", "--strip",
+                     "--keep-original-names", "--estimate", "--cache"):
+            self.assertIn(flag, text, f"RECIPES.md never mentions {flag}")
+
+    def test_the_override_flags_the_recipes_promise_are_real(self):
+        import subprocess
+
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "ndos.py"), "organize", "plan", "--help"],
+            capture_output=True, text=True,
+        )
+        for flag in ("--subject-depth", "--session-depth", "--strip"):
+            self.assertIn(flag, result.stdout)
 
 
 if __name__ == "__main__":
