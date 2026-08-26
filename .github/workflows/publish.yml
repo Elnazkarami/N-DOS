@@ -1,0 +1,112 @@
+name: publish
+
+# Publishing uses PyPI Trusted Publishing, so no API token is stored in this
+# repository or anywhere else. PyPI is told, once, that this workflow in this
+# repository is allowed to publish, and it verifies that directly with GitHub.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run the tests before building anything
+        run: |
+          python -m pip install --upgrade pip jsonschema
+          python -m unittest discover -s tests
+
+      - name: Build
+        run: |
+          python -m pip install build twine
+          python -m build
+
+      - name: Check the artifacts render and are well formed
+        run: python -m twine check --strict dist/*
+
+      # A release tagged v0.2.0 that ships 0.1.0 is the kind of mistake that
+      # cannot be undone once it is on PyPI, where a version number is final.
+      - name: Confirm the version matches the tag
+        if: github.event_name == 'release'
+        run: |
+          python - <<'PY'
+          import os, pathlib, tomllib
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          tag = os.environ["TAG"].lstrip("v")
+          if version != tag:
+              raise SystemExit(
+                  f"pyproject.toml says {version} but the release is tagged {tag}. "
+                  "Bump the version or retag; PyPI will not let you reuse a number."
+              )
+          print(f"version {version} matches tag {tag}")
+          PY
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+      - name: Confirm the wheel installs and runs on its own
+        run: |
+          python -m venv /tmp/check
+          /tmp/check/bin/pip install dist/*.whl
+          /tmp/check/bin/ndos --version
+          /tmp/check/bin/ndos --help > /dev/null
+          # The zero-dependency promise is the reason this runs on locked-down
+          # acquisition machines, and a release is where it would quietly break.
+          if /tmp/check/bin/pip list --format=freeze \
+               | grep -viE '^(ndos|pip|setuptools|wheel)=='; then
+            echo "the wheel pulled in a third-party package"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  testpypi:
+    name: publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    name: publish to PyPI
+    needs: build
+    if: github.event_name == 'release' || inputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

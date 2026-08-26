@@ -5,7 +5,8 @@
 # `python3 ndos.py`.
 
 [build-system]
-requires = ["setuptools>=61"]
+# 77+ for the SPDX license form; only affects building, not installing.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -14,7 +15,8 @@ version = "0.1.0"
 description = "A BIDS-inspired framework for wet-lab and animal neuroscience data"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Elnaz Alikarami" }]
 keywords = [
     "neuroscience", "electrophysiology", "data-management", "provenance",
@@ -23,7 +25,6 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
