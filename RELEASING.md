@@ -73,3 +73,18 @@ excluded: those scripts are superseded and should not travel with a release.
 - Confirm `pip install ndos` works from a clean environment.
 - If the release is meant to be citable, archive the tag on Zenodo and add the
   DOI to `CITATION.cff` and the README.
+
+## About the DOI
+
+A Zenodo DOI does not require a published paper, and does not wait for one.
+Software is cited in its own right: you link this repository to Zenodo once,
+and every GitHub release from then on is archived and assigned a DOI
+automatically.
+
+Doing it early is worth more than doing it neatly. Pilot users can cite the
+exact version they tested, a bug report can name a version that will still
+exist in five years, and when the paper is written it cites the software DOI
+rather than the other way round.
+
+Zenodo issues two: one for the project as a whole and one per release. Put the
+project DOI in the README, and the release DOI in `CITATION.cff`.

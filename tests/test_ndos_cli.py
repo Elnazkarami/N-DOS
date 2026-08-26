@@ -193,6 +193,49 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(content["project"]["scripts"]["ndos"], "ndos:main")
 
 
+class IssueTemplateTests(unittest.TestCase):
+    """The first thing a user touches when something breaks.
+
+    The previous template asked people to choose between six modules that had
+    been removed, which is worse than having no template at all.
+    """
+
+    TEMPLATES = Path(".github/ISSUE_TEMPLATE")
+
+    def _files(self):
+        return sorted((ROOT / self.TEMPLATES).glob("*.yml"))
+
+    def test_templates_exist(self):
+        self.assertTrue(self._files(), "no issue templates")
+
+    def test_no_template_names_a_file_that_was_removed(self):
+        import re
+
+        for path in self._files():
+            text = path.read_text(encoding="utf-8")
+            for name in set(re.findall(r"\bndos[_a-z]*\.(?:py|R|sh)\b", text)):
+                self.assertTrue(
+                    (ROOT / name).is_file(),
+                    f"{path.name} refers to {name}, which is not in the repo",
+                )
+
+    def test_a_report_can_be_filed_without_sharing_any_data(self):
+        # Lab data is unpublished. If filing a bug seemed to require sending
+        # some, people would simply not file.
+        for path in self._files():
+            if path.name == "config.yml":
+                continue
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertIn(
+                "data", text,
+                f"{path.name} never addresses whether data must be shared",
+            )
+        combined = " ".join(
+            p.read_text(encoding="utf-8").lower() for p in self._files()
+        )
+        self.assertIn("you do not need to share any data", combined)
+
+
 class DocumentationTests(unittest.TestCase):
     """A documented command that does not exist is worse than no document."""
 

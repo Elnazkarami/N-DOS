@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Something went wrong and you want to fix it yourself
+    url: https://github.com/Elnazkarami/N-DOS/blob/main/RECIPES.md
+    about: >-
+      Everything in flagged_data, the wrong folder read as the subject, a
+      session split in two, a scan that will not finish — these have answers.
+  - name: You have not used NDOS yet
+    url: https://github.com/Elnazkarami/N-DOS/blob/main/QUICKSTART.md
+    about: Fifteen minutes, from an unreadable directory to a searchable project.

@@ -1,0 +1,58 @@
+name: NDOS read my folder layout wrongly
+description: It put files in the wrong place, or could not identify a subject or session
+labels: ["layout"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This is the most useful report you can send.** NDOS reads structure
+        by pattern, and a layout it cannot read means a real lab organises data
+        in a way the rules have not met. That is a gap in the rules, not a
+        mistake you made.
+
+        **You do not need to share any data.** Everything asked for below
+        describes the *shape* of your directories, never their contents.
+
+  - type: textarea
+    id: report
+    attributes:
+      label: What NDOS sees
+      description: |
+        Run this and paste the output. It describes structure only — file
+        types, folder patterns, sizes. No file contents, no filenames beyond
+        the examples it uses to explain itself.
+      render: shell
+      placeholder: python3 ndos.py report /path/to/your/data --no-checksum
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Where these files should have gone
+      description: >-
+        In your own terms: which folder is the animal, which is the session,
+        and anything else the paths encode. Rename things if the real names are
+        sensitive — the shape is what matters.
+      placeholder: |
+        study7/cohortB/rat14/day3/rec.dat
+        cohortB is a group, rat14 is the animal, day3 is the session.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: Did --subject-depth or --session-depth help?
+      description: >-
+        RECIPES.md explains these. If they fixed it, that is still worth
+        reporting — it means the guess should have been right without them.
+      placeholder: "Tried --subject-depth 2 --session-depth 3; that worked / that did not help because..."
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: output of `python3 ndos.py --version`
+    validations:
+      required: true

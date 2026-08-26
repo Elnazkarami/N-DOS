@@ -1,0 +1,33 @@
+name: Something is broken
+description: A crash, a wrong result, or behaviour that does not match the documentation
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If NDOS touched data it should not have, say so first and we will treat
+        it as urgent. Nothing is supposed to write without showing a plan and
+        asking.
+
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      placeholder: "ndos --version; macOS 15 / Windows 11 / Ubuntu 24.04"
+    validations:
+      required: true
