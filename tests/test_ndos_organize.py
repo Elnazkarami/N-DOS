@@ -463,3 +463,51 @@ class UndoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PilotFindingsTests(unittest.TestCase):
+    """Reported from a run against a real 609 GB drive, 2026-08-27.
+
+    Each of these was found by someone using the tool rather than building it,
+    which is why they are pinned here.
+    """
+
+    def test_an_archive_named_subject_and_date_is_read(self):
+        # Every session in one lab was archived as A3302-190809.zip, and all
+        # 287 of them were flagged: the animal was in the filename, not a
+        # folder, and the year had two digits.
+        placement = derive(_manifest(["Gilberto/A3200/A3302-190809.zip"]))[0]
+
+        self.assertTrue(placement["placed"])
+        self.assertEqual(placement["subject"], "A3302")
+        self.assertEqual(placement["session"], "20190809")
+
+    def test_the_animal_in_the_filename_beats_the_cohort_in_the_folder(self):
+        # A3200 is the group; A3302 is the animal. Trusting the folder would
+        # have labelled every session with its cohort.
+        placement = derive(_manifest(["Gilberto/A3200/A3302-190809.zip"]))[0]
+        self.assertNotEqual(placement["subject"], "A3200")
+        self.assertIn("filename", " ".join(placement["why"]))
+
+    def test_a_two_digit_year_resolves_to_this_century(self):
+        placement = derive(_manifest(["lab/A3303-191021.zip"]))[0]
+        self.assertEqual(placement["session"], "20191021")
+
+    def test_the_older_folder_convention_still_works(self):
+        placement = derive(_manifest(["lab/A3302/2019_08_09/rec.dat"]))[0]
+        self.assertEqual(placement["subject"], "A3302")
+        self.assertEqual(placement["session"], "20190809")
+
+    def test_a_successful_apply_does_not_tell_you_to_run_apply(self):
+        from ndos_organize import render_plan
+
+        with tempfile.TemporaryDirectory() as directory:
+            plan = build_plan(
+                _manifest(["M01/2025_03_14/rec.dat"]), Path(directory) / "out"
+            )
+            planning = render_plan(plan)
+            applying = render_plan(plan, footer=False)
+
+            self.assertIn("run 'apply'", planning)
+            self.assertNotIn("run 'apply'", applying)
+            self.assertNotIn("Nothing has been created", applying)

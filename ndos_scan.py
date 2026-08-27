@@ -83,7 +83,10 @@ def _sha256(path: Path) -> str:
 
 
 def _walk(
-    root: Path, excludes: Tuple[str, ...], skipped: List[Dict[str, str]]
+    root: Path,
+    excludes: Tuple[str, ...],
+    skipped: List[Dict[str, str]],
+    follow_symlinks: bool = False,
 ) -> Iterator[Path]:
     """Yield files below ``root`` in a stable order, recording what was skipped.
 
@@ -100,8 +103,23 @@ def _walk(
             }
         )
 
-    for current, directories, filenames in os.walk(root, onerror=on_error):
+    # Following links can revisit the same directory through two routes, or
+    # loop forever. Real paths already seen are skipped.
+    seen_directories = set()
+
+    for current, directories, filenames in os.walk(
+        root, onerror=on_error, followlinks=follow_symlinks
+    ):
         current_path = Path(current)
+        if follow_symlinks:
+            try:
+                real = current_path.resolve()
+            except OSError:
+                real = current_path
+            if real in seen_directories:
+                directories[:] = []
+                continue
+            seen_directories.add(real)
 
         kept_directories = []
         for directory in sorted(directories):
@@ -114,7 +132,7 @@ def _walk(
                         "detail": "matched an exclude pattern",
                     }
                 )
-            elif full.is_symlink():
+            elif full.is_symlink() and not follow_symlinks:
                 skipped.append(
                     {
                         "path": _relative(full, root),
@@ -139,14 +157,24 @@ def _walk(
                 )
                 continue
             if full.is_symlink():
-                skipped.append(
-                    {
-                        "path": _relative(full, root),
-                        "reason": "symlink",
-                        "detail": "file symlink; target not inventoried",
-                    }
-                )
-                continue
+                if not follow_symlinks:
+                    skipped.append(
+                        {
+                            "path": _relative(full, root),
+                            "reason": "symlink",
+                            "detail": "file symlink; target not inventoried",
+                        }
+                    )
+                    continue
+                if not full.exists():
+                    skipped.append(
+                        {
+                            "path": _relative(full, root),
+                            "reason": "unreadable-file",
+                            "detail": "symlink target is missing",
+                        }
+                    )
+                    continue
             yield full
 
 
@@ -163,6 +191,7 @@ def scan(
     excludes: Tuple[str, ...] = DEFAULT_EXCLUDES,
     progress: bool = False,
     cache_path: Optional[Path] = None,
+    follow_symlinks: bool = False,
 ) -> Dict[str, Any]:
     """Return a manifest of ``root`` without changing anything below it.
 
@@ -191,7 +220,7 @@ def scan(
     # possible; walking twice is cheap next to reading every byte.
     planned: List[Tuple[Path, int]] = []
     if include_checksums and progress:
-        for path in _walk(root, excludes, []):
+        for path in _walk(root, excludes, [], follow_symlinks):
             try:
                 planned.append((path, path.stat().st_size))
             except OSError:
@@ -206,7 +235,7 @@ def scan(
             save_cache(cache_path, root, cache)
 
     try:
-        for path in _walk(root, excludes, skipped):
+        for path in _walk(root, excludes, skipped, follow_symlinks):
             try:
                 stat = path.stat()
             except OSError as error:
@@ -405,6 +434,7 @@ def estimate(
     excludes: Tuple[str, ...] = DEFAULT_EXCLUDES,
     sample_bytes: int = 24 * 1024 * 1024,
     cache_path: Optional[Path] = None,
+    follow_symlinks: bool = False,
 ) -> Dict[str, Any]:
     """How long a checksummed scan would take, measured rather than guessed.
 
@@ -418,7 +448,7 @@ def estimate(
 
     skipped: List[Dict[str, str]] = []
     sizes: List[Tuple[Path, int]] = []
-    for path in _walk(root, excludes, skipped):
+    for path in _walk(root, excludes, skipped, follow_symlinks):
         try:
             sizes.append((path, path.stat().st_size))
         except OSError:
@@ -518,6 +548,14 @@ def main() -> int:
         help="Additional name pattern to skip; repeatable",
     )
     parser.add_argument(
+        "--follow-links",
+        action="store_true",
+        help=(
+            "Inventory what symlinks point at. Needed for an NDOS project, "
+            "whose layout is built from links."
+        ),
+    )
+    parser.add_argument(
         "--cache",
         nargs="?",
         const=CACHE_FILE,
@@ -582,6 +620,7 @@ def main() -> int:
             excludes=excludes,
             progress=show_progress,
             cache_path=cache_path,
+            follow_symlinks=args.follow_links,
         )
     except ValueError as error:
         parser.error(str(error))

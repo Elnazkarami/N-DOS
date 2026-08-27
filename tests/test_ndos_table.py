@@ -561,3 +561,70 @@ class EntityModelTests(unittest.TestCase):
             self.assertTrue(
                 any("ambiguous" in p["message"] for p in result["procedures"]["problems"])
             )
+
+
+class ProjectExportTests(unittest.TestCase):
+    """Exporting metadata from a project built in the default link mode.
+
+    A pilot run found steps 3 and 4 of the quickstart did not compose: the
+    layout is symlinks, the scanner skipped symlinks, and export saw almost
+    nothing.
+    """
+
+    def _project(self, base: Path) -> Path:
+        import ndos_organize
+
+        source = base / "lab" / "M01" / "2025_03_14"
+        source.mkdir(parents=True)
+        (source / "rec.dat").write_bytes(b"signal")
+        (source / "0.avi").write_bytes(b"video")
+        manifest = ndos_scan.scan(base / "lab", include_checksums=False, progress=False)
+        project = base / "project"
+        ndos_organize.apply_plan(
+            ndos_organize.build_plan(manifest, project), progress=False
+        )
+        return project
+
+    def test_a_link_built_project_is_recognised_as_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._project(Path(directory))
+            self.assertTrue(ndos_table.looks_like_project(project))
+            self.assertFalse(ndos_table.looks_like_project(Path(directory) / "lab"))
+
+    def test_exporting_from_a_project_sees_the_linked_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = self._project(base)
+            metadata = base / "metadata"
+
+            manifest = ndos_table._load_manifest(project, quiet=True)
+
+            # Without following links this found nothing to describe.
+            self.assertGreaterEqual(manifest["file_count"], 2)
+
+    def test_the_project_layout_is_used_rather_than_guessed_at(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = self._project(base)
+            manifest = ndos_table._load_manifest(project, quiet=True)
+
+            # <role>/<subject>/<session>/ is known, so it is not re-derived;
+            # guessing read "raw_data" itself as the session.
+            rows = ndos_table.group_sessions(manifest, group_depth=2, subject_depth=1)
+            subjects = {row["observed_folder_subject"] for row in rows}
+            self.assertIn("M01", subjects)
+
+    def test_exporting_a_directory_does_not_checksum_it(self):
+        # table export never reads a checksum. Computing them anyway cost
+        # hours on a real drive and the result was discarded.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            source = base / "lab" / "M01" / "2025_03_14"
+            source.mkdir(parents=True)
+            (source / "rec.dat").write_bytes(b"signal")
+
+            manifest = ndos_table._load_manifest(base / "lab", quiet=True)
+
+            self.assertFalse(manifest["checksums"])
+            for entry in manifest["files"]:
+                self.assertNotIn("sha256", entry)

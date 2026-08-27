@@ -170,6 +170,13 @@ UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 #: Names like A0634_201122_183220: subject, then YYMMDD, then HHMMSS.
 COMPOUND_SEGMENT = re.compile(r"^[A-Za-z]{1,4}\d{2,6}[-_](\d{6})[-_](\d{6})$")
 
+#: Names like A3302-190809.zip: the animal and the date, in the filename, with
+#: a two-digit year. A whole lab archived every session this way, and the
+#: animal was nowhere in the folders -- the directory above held the cohort.
+SUBJECT_DATE_NAME = re.compile(
+    r"^([A-Za-z]{1,4}[-_]?\d{2,6}[a-z]?)[-_](\d{6})(?:[-_](\d{4,6}))?$"
+)
+
 
 # --------------------------------------------------------------------------
 # derivation
@@ -190,6 +197,36 @@ def _normalise_date(parts: Sequence[str]) -> Optional[str]:
 def _seconds(time: str) -> int:
     """HHMMSS as seconds past midnight."""
     return int(time[:2]) * 3600 + int(time[2:4]) * 60 + int(time[4:6])
+
+
+def _subject_and_session_from_name(
+    filename: str,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
+    """Read `A3302-190809.zip` as animal A3302 recorded on 2019-08-09.
+
+    The filename is more specific than the folders around it: where a session
+    is archived as one file, the directory above it is usually the cohort, so
+    trusting the folder would label every animal with its group.
+    """
+    stem, _ = _split_extension(filename)
+    match = SUBJECT_DATE_NAME.match(stem)
+    if not match:
+        return None, None, None
+
+    digits = match.group(2)
+    date = _normalise_date((digits[:2], digits[2:4], digits[4:]))
+    if not date:
+        return None, None, None
+
+    session: Dict[str, Any] = {"date": date}
+    time = match.group(3)
+    if time and len(time) == 6:
+        session["time"] = time
+    return (
+        match.group(1),
+        session,
+        f"filename {filename!r} names the animal and the date",
+    )
 
 
 def _find_subject(segments: Sequence[str]) -> Tuple[Optional[str], Optional[str]]:
@@ -458,10 +495,16 @@ def derive(
         # An explicit depth overrides the guess. Real layouts exist that no
         # heuristic will read correctly, and a user who can see the mistake
         # needs a way to say so.
+        named_subject, named_session, named_reason = (
+            _subject_and_session_from_name(name)
+        )
+
         forced_subject = _at_depth(directories, subject_depth)
         if forced_subject is not None:
             subject = forced_subject
             subject_reason = f"folder {forced_subject!r} at level {subject_depth}, as you specified"
+        elif named_subject:
+            subject, subject_reason = named_subject, named_reason
         else:
             subject, subject_reason = _find_subject(directories)
             if subject_depth is not None:
@@ -477,6 +520,8 @@ def derive(
                 f"folder {forced_session!r} at level {session_depth}, as you "
                 f"specified ({session_reason})"
             )
+        elif named_session:
+            session, session_reason = named_session, named_reason
         else:
             session, session_reason = _find_session(directories, name)
         role, role_reason = _find_role(directories, category)
@@ -986,7 +1031,9 @@ def undo(log: Dict[str, Any], progress: bool = True) -> Dict[str, Any]:
 _bytes = ndos_scan._human_bytes
 
 
-def render_plan(plan: Dict[str, Any], limit: int = 15) -> str:
+def render_plan(
+    plan: Dict[str, Any], limit: int = 15, footer: bool = True
+) -> str:
     out: List[str] = []
     add = out.append
 
@@ -1089,10 +1136,11 @@ def render_plan(plan: Dict[str, Any], limit: int = 15) -> str:
         for action in [a for a in plan["actions"] if not a["placed"]][:5]:
             add(f"    {Path(action['source']).name}")
 
-    add("")
-    add("-" * 72)
-    add("Nothing has been created. To build this tree, run 'apply'.")
-    add("-" * 72)
+    if footer:
+        add("")
+        add("-" * 72)
+        add("Nothing has been created. To build this tree, run 'apply'.")
+        add("-" * 72)
     return "\n".join(out) + "\n"
 
 
@@ -1142,7 +1190,9 @@ def command_apply(args: argparse.Namespace) -> int:
             subject_depth=args.subject_depth, session_depth=args.session_depth,
         )
 
-    print(render_plan(plan), end="")
+    # Without footer=False this ended a successful run by telling the user to
+    # run the command they had just run.
+    print(render_plan(plan, footer=False), end="")
 
     if plan["mode"] == "copy" and plan["enough_space"] is False and not args.force:
         print(

@@ -185,7 +185,13 @@ def inspect(
 ) -> Dict[str, Any]:
     """Catalogue every archive below ``root``, reusing a cache where possible."""
     archives = find_archives(root)
+    deferred: List[Dict[str, Any]] = []
     if not include_tar:
+        deferred = [
+            {"path": str(path), "bytes": path.stat().st_size}
+            for path in archives
+            if _kind(path) == "tar"
+        ]
         archives = [path for path in archives if _kind(path) == "zip"]
 
     cached: Dict[str, Dict[str, Any]] = {}
@@ -235,6 +241,11 @@ def inspect(
         "member_count": sum(e["member_count"] for e in entries),
         "uncompressed_bytes": sum(e["uncompressed_bytes"] for e in entries),
         "archives": entries,
+        # Tar archives must be streamed end to end to be listed, so they are
+        # opt-in -- but skipping them silently left 155 GB of a real drive
+        # uninventoried with nothing saying so.
+        "deferred": deferred,
+        "deferred_bytes": sum(item["bytes"] for item in deferred),
     }
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -463,6 +474,17 @@ def render_catalogue(catalogue: Dict[str, Any], limit: int = 12) -> str:
     )
     if catalogue.get("reused_from_cache"):
         add(f"Cached    : {catalogue['reused_from_cache']} read from a previous run")
+    if catalogue.get("deferred"):
+        add("")
+        add(
+            f"NOT READ  : {ndos_report._plural(len(catalogue['deferred']), 'tar archive')}"
+            f", {_bytes(catalogue['deferred_bytes'])}"
+        )
+        add(
+            "            Unlike a zip, a tar must be read end to end to be "
+            "listed. Pass"
+        )
+        add("            --include-tar to inventory them; expect it to be slow.")
     add("")
     add("Nothing was extracted. These are the archives' own indexes.")
 

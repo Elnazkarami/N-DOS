@@ -75,6 +75,14 @@ The opposite: two genuine recordings on one day, in folders that do not record
 a time. There is nothing to tell them apart, so they land together. Use
 `--session-depth` to point at whatever folder does distinguish them.
 
+## "My sessions are single archives named after the animal"
+
+Files like `A3302-190809.zip`, with the animal in the name and the folder
+above holding a cohort, are read correctly: the animal comes from the
+filename, and a two-digit year is resolved to this century. If yours use a
+different separator or ordering and end up in `flagged_data/`, that is worth
+reporting — see the last section.
+
 ## "I don't like the new filenames"
 
 NDOS renames to `SubjectID_SessionID_type` because the standard says so. To
@@ -119,6 +127,11 @@ python3 ndos.py archive extract archives.json --dest ./work --name '*.avi'
 
 `plan` tells you how much disk it needs before you start. Nothing is unpacked
 until you confirm.
+
+`inspect` reads `.zip` archives only, because a `.tar` or `.tar.gz` has to be
+read end to end to be listed, which on a slow drive is expensive enough to be
+your decision. It tells you how many it left alone and how much they hold; add
+`--include-tar` when you want them.
 
 ## "I built a project and want to start over"
 
