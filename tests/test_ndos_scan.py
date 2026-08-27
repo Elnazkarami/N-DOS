@@ -404,3 +404,60 @@ class CacheTests(unittest.TestCase):
             measured = estimate(Path(directory))
             self.assertEqual(measured["file_count"], 0)
             self.assertIsNone(measured["bytes_per_second"])
+
+
+class SymlinkFollowingTests(unittest.TestCase):
+    """An NDOS project is built from links, so inventorying one needs them."""
+
+    def _linked(self, base: Path):
+        real = base / "real"
+        real.mkdir()
+        (real / "rec.dat").write_bytes(b"signal")
+        project = base / "project"
+        (project / "raw_data").mkdir(parents=True)
+        (project / "raw_data" / "rec.dat").symlink_to(real / "rec.dat")
+        return project
+
+    def test_links_are_skipped_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._linked(Path(directory))
+            manifest = scan(project, include_checksums=False)
+
+            self.assertEqual(manifest["file_count"], 0)
+            self.assertEqual(
+                [e["reason"] for e in manifest["skipped"]], ["symlink"]
+            )
+
+    def test_links_are_inventoried_when_asked_for(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._linked(Path(directory))
+            manifest = scan(project, include_checksums=False, follow_symlinks=True)
+
+            self.assertEqual(manifest["file_count"], 1)
+            self.assertEqual(manifest["files"][0]["size_bytes"], 6)
+
+    def test_a_link_to_nothing_is_reported_not_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = self._linked(base)
+            (base / "real" / "rec.dat").unlink()
+
+            manifest = scan(project, include_checksums=False, follow_symlinks=True)
+
+            self.assertEqual(manifest["file_count"], 0)
+            self.assertTrue(
+                any("missing" in e["detail"] for e in manifest["skipped"])
+            )
+
+    def test_a_loop_of_links_does_not_hang(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            inner = base / "a" / "b"
+            inner.mkdir(parents=True)
+            (inner / "file.txt").write_text("x", encoding="utf-8")
+            # A directory linking back to its own ancestor.
+            (inner / "loop").symlink_to(base / "a")
+
+            manifest = scan(base, include_checksums=False, follow_symlinks=True)
+
+            self.assertGreaterEqual(manifest["file_count"], 1)

@@ -945,21 +945,66 @@ def link_records(directory: Path, include_empty: bool = False) -> Dict[str, Any]
 # cli
 # --------------------------------------------------------------------------
 
+#: Directories that mark a path as an NDOS project rather than raw storage.
+PROJECT_MARKERS = ("raw_data", "processed_data", "metadata")
+
+
+def looks_like_project(path: Path) -> bool:
+    """Whether a directory is an NDOS project rather than original storage."""
+    return path.is_dir() and sum(
+        (path / marker).is_dir() for marker in PROJECT_MARKERS
+    ) >= 2
+
+
 def _load_manifest(path: Path, quiet: bool) -> Dict[str, Any]:
-    if path.is_dir():
-        if not quiet:
-            print(f"Scanning {path} (read-only)...", file=sys.stderr)
-        return ndos_scan.scan(path, progress=not quiet)
-    return json.loads(path.read_text(encoding="utf-8"))
+    if not path.is_dir():
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    # An NDOS project's layout is built from symlinks, and the scanner does
+    # not follow those by default. Without this, exporting from a project --
+    # exactly what the quickstart tells you to do -- found almost nothing.
+    project = looks_like_project(path)
+    if not quiet:
+        print(
+            f"Scanning {path} (read-only)"
+            + (", following the layout's links..." if project else "..."),
+            file=sys.stderr,
+        )
+    # Checksums are never read here: the tables need paths, sizes and dates.
+    # Computing them anyway cost hours on a real drive and was thrown away.
+    return ndos_scan.scan(
+        path,
+        include_checksums=False,
+        progress=not quiet,
+        follow_symlinks=project,
+    )
 
 
 def command_export(args: argparse.Namespace) -> int:
     manifest = _load_manifest(args.source, args.quiet)
+
+    subject_depth, group_depth = args.subject_depth, args.group_depth
+    # An NDOS project has a known shape -- <role>/<subject>/<session>/ -- so
+    # re-deriving it by pattern is both unnecessary and worse: the guess read
+    # "raw_data" itself as the session.
+    if (
+        subject_depth is None
+        and group_depth is None
+        and looks_like_project(args.source)
+    ):
+        subject_depth, group_depth = 1, 2
+        if not args.quiet:
+            print(
+                "Reading this as an NDOS project: subject at level 1, session "
+                "at level 2.",
+                file=sys.stderr,
+            )
+
     summary = export_metadata(
         manifest,
         args.dir,
-        group_depth=args.group_depth,
-        subject_depth=args.subject_depth,
+        group_depth=group_depth,
+        subject_depth=subject_depth,
     )
 
     if not args.quiet:

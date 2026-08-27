@@ -125,6 +125,10 @@ from, or what was injected.
 python3 ndos.py table export ./project -d ./metadata
 ```
 
+Pointed at a project, this recognises the layout and reads through the links
+it is built from, so it knows which folder is the animal without guessing. It
+does not checksum anything — the tables need names and dates, not hashes.
+
 That writes three spreadsheets:
 
 | File | One row per | Notes |
