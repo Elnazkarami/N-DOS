@@ -2,11 +2,10 @@
 # guides are how anyone learns to use it. A source distribution that omitted
 # them would ship the implementation without the thing it implements.
 include LICENSE NOTICE CITATION.cff
-include README.md QUICKSTART.md RECIPES.md
+include README.md QUICKSTART.md RECIPES.md LEGACY.md
 recursive-include schemas *.json
 recursive-include tests *.py
 include .github/workflows/tests.yml
 
-# Nothing from the superseded prototypes, and no working files.
-prune legacy
+# No working files.
 global-exclude *.pyc __pycache__ .DS_Store

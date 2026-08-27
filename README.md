@@ -521,10 +521,11 @@ additionally validates generated manifests against the published schema.
 | `ndos_init.py` | Project initialisation |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
-| `legacy/` | Superseded prototypes — **unsupported, they move files** |
+| `LEGACY.md` | Where the superseded prototypes went, and why |
 
-The `legacy/` code predates NDOS Core and restructures data in place. It is kept
-for reference only; see [`legacy/README.md`](https://github.com/Elnazkarami/N-DOS/blob/main/legacy/README.md).
+Scripts that predate NDOS Core are no longer in this branch: they move data
+with no rollback and one of them contradicts the standard. They remain
+reachable, with their history — see [LEGACY.md](https://github.com/Elnazkarami/N-DOS/blob/main/LEGACY.md).
 
 ---
 

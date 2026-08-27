@@ -172,8 +172,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("recursive-include schemas *.json", manifest)
         self.assertIn("QUICKSTART.md", manifest)
         self.assertIn("RECIPES.md", manifest)
-        # Superseded prototypes should not travel with a release.
-        self.assertIn("prune legacy", manifest)
+        self.assertIn("LEGACY.md", manifest)
 
     def test_the_readme_has_no_relative_links_that_pypi_would_break(self):
         import re
