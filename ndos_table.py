@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import ndos_organize
 import ndos_report
 import ndos_scan
 
@@ -258,10 +259,21 @@ def group_sessions(
         group_depth = inferred_session if inferred_session is not None else 0
 
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    named: Dict[str, Tuple[str, Dict[str, Any]]] = {}
     for entry in files:
         parts = entry["path"].split("/")[:-1]
-        prefix = "/".join(parts[: group_depth + 1]) if parts else ""
-        groups[prefix].append(entry)
+        subject, session, _ = ndos_organize.subject_and_session_from_name(
+            entry["name"]
+        )
+        if subject and session:
+            # A file whose name carries the animal and the date is a session in
+            # itself. Grouping it by its directory would merge every session an
+            # animal's folder holds into one, and lose all but the first.
+            key = entry["path"]
+            named[key] = (subject, session)
+        else:
+            key = "/".join(parts[: group_depth + 1]) if parts else ""
+        groups[key].append(entry)
 
     rows = []
     for prefix in sorted(groups):
@@ -280,17 +292,29 @@ def group_sessions(
             if subject_depth is not None and len(parts) > subject_depth
             else ""
         )
+
+        # ndos_organize already reads an animal out of a filename; asking it
+        # here keeps the two from disagreeing about which animal a file is.
         session_name = parts[group_depth] if len(parts) > group_depth else ""
+        if prefix in named:
+            subject_name, session = named[prefix]
+            session_name = ndos_organize._session_id(
+                session["date"], session.get("time", "")
+            )
         has_subject = (
             ndos_report._classify_name(subject_name) == "animal or subject ID"
             if subject_name
             else False
         )
         has_session = (
-            ndos_report._classify_name(session_name) in ("session", "run or recording")
+            ndos_report._classify_name(session_name)
+            in ("session", "run or recording", "date", "date (6-digit)")
             if session_name
             else False
         )
+        if prefix in named:
+            # The filename stated both, so there is nothing being inferred.
+            has_subject = has_session = True
         if has_subject and has_session:
             match = MATCH_BOTH
         elif has_subject:

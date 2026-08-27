@@ -628,3 +628,86 @@ class ProjectExportTests(unittest.TestCase):
             self.assertFalse(manifest["checksums"])
             for entry in manifest["files"]:
                 self.assertNotIn("sha256", entry)
+
+
+class SharedIdentificationTests(unittest.TestCase):
+    """organize and table must agree about which animal a file belongs to.
+
+    A pilot run reported six animals found only after passing depth flags; the
+    defaults found one. Subject identification was implemented twice, and only
+    one copy had been taught to read an animal out of a filename.
+    """
+
+    ARCHIVES = [
+        "Gilberto/A3200/A3302-190809.zip",
+        "Gilberto/A3200/A3213-210413.zip",
+        "Gilberto/A3300/A3303/A3303-191021.zip",
+    ]
+
+    def _manifest(self):
+        return {
+            "source_root": "/drive",
+            "files": [
+                {
+                    "path": path,
+                    "name": path.split("/")[-1],
+                    "extension": ".zip",
+                    "size_bytes": 1000,
+                    "modified": "2020-01-01T00:00:00Z",
+                }
+                for path in self.ARCHIVES
+            ],
+        }
+
+    def test_the_defaults_find_every_animal(self):
+        rows = ndos_table.group_sessions(self._manifest())
+        subjects = {row["observed_folder_subject"] for row in rows}
+        self.assertEqual(subjects, {"A3302", "A3213", "A3303"})
+
+    def test_two_archives_in_one_folder_are_two_sessions(self):
+        # Grouping by directory merged them and lost all but the first.
+        rows = ndos_table.group_sessions(self._manifest())
+        self.assertEqual(len(rows), 3)
+
+    def test_table_and_organize_agree_on_the_subject(self):
+        import ndos_organize
+
+        manifest = self._manifest()
+        from_table = {
+            row["observed_folder_subject"]
+            for row in ndos_table.group_sessions(manifest)
+        }
+        from_organize = {
+            placement["subject"] for placement in ndos_organize.derive(manifest)
+        }
+        self.assertEqual(from_table, from_organize)
+
+    def test_a_filename_stating_both_is_not_reported_as_a_guess(self):
+        rows = ndos_table.group_sessions(self._manifest())
+        for row in rows:
+            self.assertEqual(row["observed_match"], "subject and session")
+
+    def test_the_cohort_folder_is_not_mistaken_for_the_animal(self):
+        rows = ndos_table.group_sessions(self._manifest())
+        subjects = {row["observed_folder_subject"] for row in rows}
+        self.assertNotIn("A3200", subjects)
+        self.assertNotIn("A3300", subjects)
+
+    def test_ordinary_folder_layouts_are_unaffected(self):
+        manifest = {
+            "source_root": "/lab",
+            "files": [
+                {
+                    "path": f"M01/2025_03_14/{name}",
+                    "name": name,
+                    "extension": ".dat",
+                    "size_bytes": 1,
+                    "modified": "2025-03-14T00:00:00Z",
+                }
+                for name in ("a.dat", "b.dat")
+            ],
+        }
+        rows = ndos_table.group_sessions(manifest)
+        # Both files belong to one session, as before.
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["observed_file_count"], 2)

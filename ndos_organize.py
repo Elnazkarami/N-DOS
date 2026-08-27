@@ -199,7 +199,7 @@ def _seconds(time: str) -> int:
     return int(time[:2]) * 3600 + int(time[2:4]) * 60 + int(time[4:6])
 
 
-def _subject_and_session_from_name(
+def subject_and_session_from_name(
     filename: str,
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     """Read `A3302-190809.zip` as animal A3302 recorded on 2019-08-09.
@@ -496,7 +496,7 @@ def derive(
         # heuristic will read correctly, and a user who can see the mistake
         # needs a way to say so.
         named_subject, named_session, named_reason = (
-            _subject_and_session_from_name(name)
+            subject_and_session_from_name(name)
         )
 
         forced_subject = _at_depth(directories, subject_depth)
