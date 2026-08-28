@@ -16,6 +16,21 @@ module by module. Each module works on its own, today, with no installation.
 > below is working and tested against real lab storage. Interfaces are still
 > at 0.x and may change.
 
+## Looking for pilot testers
+
+If you have a directory of lab data nobody fully understands any more, that is
+exactly what this needs to meet. It takes about fifteen minutes and **will not
+move or change your data**.
+
+| | |
+| --- | --- |
+| **[Tell us how it went →](https://github.com/Elnazkarami/N-DOS/issues/new?template=3-pilot-feedback.yml)** | Even "I gave up at step three" is a result |
+| **[It read my folders wrongly →](https://github.com/Elnazkarami/N-DOS/issues/new?template=1-layout-misread.yml)** | The most useful report there is |
+| **[Something is broken →](https://github.com/Elnazkarami/N-DOS/issues/new?template=2-bug.yml)** | A crash or a wrong answer |
+
+No data needs sharing — every form asks about the *shape* of your directories,
+never their contents. Start at **[QUICKSTART.md](https://github.com/Elnazkarami/N-DOS/blob/main/QUICKSTART.md)**.
+
 ---
 
 ## Install nothing
