@@ -620,3 +620,54 @@ class ToolOutputTests(unittest.TestCase):
         )
         names = {Path(p["target"]).name for p in placements}
         self.assertTrue(any(name.startswith("M123_20250314_") for name in names))
+
+
+class SubjectVersusSessionTests(unittest.TestCase):
+    """A session folder is not a subject.
+
+    "ses-01" is letters followed by digits, which is also what a subject
+    identifier looks like. Taking the deepest match read the session as the
+    animal and demoted the animal to a cohort -- on any lab using the
+    sub/ses layout, which is the common one.
+    """
+
+    def test_a_session_folder_is_not_read_as_the_subject(self):
+        placement = derive(_manifest(["2025-03-14/M01/ses-01/raw/rec.dat"]))[0]
+
+        self.assertEqual(placement["subject"], "M01")
+        self.assertNotEqual(placement["subject"], "ses-01")
+
+    def test_a_date_is_preferred_over_a_session_label(self):
+        # The standard recommends YYYYMMDD, and here the path records one.
+        placement = derive(_manifest(["2025-03-14/M01/ses-01/raw/rec.dat"]))[0]
+        self.assertEqual(placement["session"], "20250314")
+
+    def test_a_session_label_is_used_when_no_date_exists(self):
+        placement = derive(_manifest(["sub-01/ses-03/rec.dat"]))[0]
+        self.assertEqual(placement["session"], "ses-03")
+        self.assertIn("no date is recorded", " ".join(placement["why"]))
+
+    def test_run_folders_are_not_read_as_subjects_either(self):
+        placement = derive(_manifest(["2025-03-14/M01/run-02/rec.dat"]))[0]
+        self.assertEqual(placement["subject"], "M01")
+
+    def test_organize_output_satisfies_the_standard_it_implements(self):
+        import ndos_scan
+        import ndos_validate
+        from make_messy_lab import build
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = build(base / "lab", force=True)
+            manifest = ndos_scan.scan(root, include_checksums=False, progress=False)
+            project = base / "project"
+
+            apply_plan(build_plan(manifest, project), progress=False)
+            result = ndos_validate.validate(project)
+
+            # A project this tool builds must pass the checker beside it.
+            self.assertTrue(
+                result["conforms"],
+                [f["message"] for f in result["findings"]
+                 if f["level"] == "requirement"],
+            )

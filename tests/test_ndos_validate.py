@@ -59,15 +59,29 @@ class SessionTests(unittest.TestCase):
         ndos_init.initialize(root)
         return root
 
-    def test_a_badly_named_session_is_a_requirement_failure(self):
+    def test_a_session_not_named_as_a_date_is_a_recommendation(self):
+        # The manuscript says SessionID is "typically" a date. Some data
+        # records a session without recording when it happened, and inventing
+        # a date it does not have would be worse than keeping ses-01.
         with tempfile.TemporaryDirectory() as directory:
             root = self._project(Path(directory))
-            (root / "raw_data" / "M123" / "March14").mkdir(parents=True)
+            (root / "raw_data" / "M123" / "ses-01").mkdir(parents=True)
+
+            result = validate(root)
+
+            self.assertTrue(result["conforms"])
+            self.assertIn("session-id-not-a-date", _codes(result, "recommendation"))
+
+    def test_an_ambiguous_date_in_a_session_is_a_requirement_failure(self):
+        # 03/04/2025 names two different days depending on the reader.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._project(Path(directory))
+            (root / "raw_data" / "M123" / "03.04.2025").mkdir(parents=True)
 
             result = validate(root)
 
             self.assertFalse(result["conforms"])
-            self.assertIn("session-id-format", _codes(result, "requirement"))
+            self.assertIn("ambiguous-date", _codes(result, "requirement"))
 
     def test_both_session_id_forms_are_accepted(self):
         with tempfile.TemporaryDirectory() as directory:

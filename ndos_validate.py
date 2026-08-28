@@ -36,8 +36,11 @@ SPEC_VERSION = "0.1"
 #: the checker and the creator cannot disagree about what the standard is.
 REQUIRED_DIRECTORIES = tuple(name for name, _ in ndos_init.DIRECTORIES)
 
-#: SessionID as §3 defines it.
+#: The form §3 recommends for a SessionID.
 SESSION_ID = re.compile(r"^\d{8}(_\d{2})?$")
+
+#: A date whose day and month can be swapped, which §3 forbids.
+SLASH_DATE = re.compile(r"\d{1,2}[/.]\d{1,2}[/.]\d{2,4}")
 
 #: Files that legitimately sit at a project root or inside a session without
 #: being acquisition data.
@@ -120,13 +123,17 @@ def _check_sessions(root: Path) -> List[Dict[str, Any]]:
                 f"raw_data/{subject.name}/",
             ))
 
+    # A duplicate SessionID within one subject is a genuine failure: two
+    # recordings that cannot be told apart.
+    seen: Dict[str, List[str]] = {}
     for subject, session, _ in _sessions(root):
-        if not SESSION_ID.match(session):
+        seen.setdefault(subject, []).append(session)
+        if SLASH_DATE.search(session):
             findings.append(_requirement(
-                "session-id-format",
-                f"session {session!r} is not YYYYMMDD or YYYYMMDD_NN",
-                "rename it, or rebuild the layout with ndos organize, which "
-                "derives the date from what is already there",
+                "ambiguous-date",
+                f"session {session!r} contains a date whose day and month can "
+                "be confused",
+                "rename it to YYYYMMDD",
                 f"raw_data/{subject}/{session}",
             ))
     return findings
@@ -176,6 +183,19 @@ def _check_recommendations(root: Path) -> List[Dict[str, Any]]:
             "ndos organize applies the convention; files inside analysis-tool "
             "output are exempt and should stay as they are",
             ", ".join(unconventional[:3]),
+        ))
+
+    undated = [
+        (subject, session) for subject, session, _ in sessions
+        if not SESSION_ID.match(session)
+    ]
+    if undated:
+        findings.append(_recommendation(
+            "session-id-not-a-date",
+            f"{len(undated)} sessions are not named as YYYYMMDD",
+            "a date is a better identifier where the data records one; where "
+            "it does not, this is fine",
+            ", ".join(f"{s}/{n}" for s, n in undated[:3]),
         ))
 
     metadata = root / "metadata"
