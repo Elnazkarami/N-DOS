@@ -188,8 +188,13 @@ def collect(root: Path) -> List[Dict[str, Any]]:
             found.append(
                 {
                     "path": str(target),
-                    "relative": str(target.relative_to(root))
-                    if str(target).startswith(str(root)) else str(target),
+                    # POSIX separators always: this is shared and loaded
+                    # elsewhere, and every other NDOS artefact uses them.
+                    "relative": (
+                        target.relative_to(root).as_posix()
+                        if str(target).startswith(str(root))
+                        else Path(target).as_posix()
+                    ),
                     "exists": target.exists(),
                     "size_bytes": target.stat().st_size if target.is_file() else 0,
                     "flags": entry,

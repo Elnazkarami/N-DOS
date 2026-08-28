@@ -327,6 +327,16 @@ class ValidatedIndexTests(unittest.TestCase):
             self.assertEqual(row["note"], "curated in Phy")
             self.assertTrue(row["validated_at"])
 
+    def test_index_paths_use_posix_separators_everywhere(self):
+        # The index is loaded by pipelines and shared between machines; a
+        # backslash path is unusable off the machine that wrote it.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            self._project(base)
+            for row in ndos_tags.build_index(base):
+                self.assertNotIn("\\", row["path"])
+                self.assertIn("/", row["path"])
+
     def test_the_index_breaks_the_path_into_role_subject_session(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
