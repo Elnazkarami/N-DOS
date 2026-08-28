@@ -261,6 +261,14 @@ Structure is read from directory names, from filenames when the folders are
 silent (`2020_11_20.zip` carries its date nowhere else), and from compound
 names like `A0634_201122_183220`.
 
+**Analysis-tool output is left alone.** A Phy or Kilosort sorting is opened by
+looking for `spike_times.npy` and `params.py` by name, so renaming inside one
+would stop the tool reading it back. Directories written by Phy, Kilosort,
+SpikeInterface, suite2p, Open Ephys, DeepLabCut or Zarr are recognised by the
+files those tools require, placed under the session they belong to, and carried
+across with their filenames and internal structure untouched. The plan says
+when it has done this and why.
+
 **Nothing is dropped.** Files whose subject or session cannot be determined go
 to `flagged_data/` with their original structure intact and a
 `flagged_notes.json` saying why — which is what the N-DOS layout reserves that

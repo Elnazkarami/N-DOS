@@ -155,6 +155,26 @@ TYPE_RULES: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     )),
 )
 
+#: Directories written by an analysis tool, recognised by the files that must
+#: be present for that tool to read them back. Their internal filenames are an
+#: interface, not a naming choice: Phy, Kilosort and SpikeInterface look for
+#: `spike_times.npy` and `params.py` by name, so renaming them means the
+#: sorting can no longer be opened. Everything below such a directory is kept
+#: exactly as it is.
+TOOL_OUTPUTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("Phy / Kilosort sorting", ("params.py", "spike_times.npy")),
+    ("Phy / Kilosort sorting", ("spike_times.npy", "spike_clusters.npy")),
+    ("SpikeInterface folder", ("si_folder.json",)),
+    ("SpikeInterface folder", ("spikeinterface_info.json",)),
+    ("SpikeInterface binary", ("binary.json",)),
+    ("suite2p output", ("ops.npy", "stat.npy")),
+    ("Open Ephys recording", ("structure.oebin",)),
+    ("Zarr store", (".zgroup",)),
+    ("Zarr store", (".zarray",)),
+    ("Zarr store", ("zarr.json",)),
+    ("DeepLabCut project", ("config.yaml", "dlc_config.yaml")),
+)
+
 #: Version markers a lab already writes into filenames, preserved rather than
 #: discarded so a reprocessing is not silently flattened onto its predecessor.
 VERSION_TOKEN = re.compile(r"[._-](v\d+|version\d+)$", re.I)
@@ -466,6 +486,38 @@ def _target(
     return f"{role}/{subject}/{session}/{name}"
 
 
+def find_tool_outputs(files: Sequence[Dict[str, Any]]) -> Dict[str, str]:
+    """Directory prefixes that belong to an analysis tool, and what wrote them.
+
+    Renaming inside one of these breaks the tool that produced it, so they are
+    carried across whole. Detection is by the marker files each tool requires,
+    which is also how the tools themselves recognise their own output.
+    """
+    by_directory: Dict[str, set] = {}
+    for entry in files:
+        parts = entry["path"].split("/")
+        prefix = "/".join(parts[:-1])
+        by_directory.setdefault(prefix, set()).add(parts[-1])
+
+    found: Dict[str, str] = {}
+    for prefix, names in by_directory.items():
+        for label, markers in TOOL_OUTPUTS:
+            if all(marker in names for marker in markers):
+                found[prefix] = label
+                break
+    return found
+
+
+def _owning_tool_output(path: str, outputs: Dict[str, str]) -> Optional[str]:
+    """The tool-output directory a file sits in, if any."""
+    parts = path.split("/")[:-1]
+    for depth in range(len(parts), 0, -1):
+        prefix = "/".join(parts[:depth])
+        if prefix in outputs:
+            return prefix
+    return None
+
+
 def _at_depth(directories: Sequence[str], depth: Optional[int]) -> Optional[str]:
     """The directory name at a given level, if the path is that deep."""
     if depth is None or depth < 0 or len(directories) <= depth:
@@ -487,6 +539,8 @@ def derive(
     because "was this the first or second recording that day?" cannot be
     answered from one file's path alone.
     """
+    tool_outputs = find_tool_outputs(manifest["files"])
+
     found = []
     for entry in manifest["files"]:
         segments = entry["path"].split("/")
@@ -628,6 +682,40 @@ def derive(
         reasons = item["reasons"]
         filename = item["name"]
 
+        owner = _owning_tool_output(item["entry"]["path"], tool_outputs)
+        if owner:
+            # Kept exactly as written, including the path below the tool's
+            # own directory, so the tool can still open its own output.
+            relative = item["entry"]["path"][len(owner) + 1 :]
+            directory = owner.split("/")[-1]
+            reasons.append(
+                f"{tool_outputs[owner]} output: {directory}/ is carried across "
+                "unchanged, because renaming inside it would stop the tool "
+                "reading it back"
+            )
+            target = (
+                f"{PROCESSED}/{subject}/{session_id}/{directory}/{relative}"
+                if subject and session_id
+                else f"{FLAGGED}/{item['entry']['path']}"
+            )
+            placements.append(
+                {
+                    "source": item["entry"]["path"],
+                    "target": target,
+                    "subject": subject,
+                    "session": session_id,
+                    "role": PROCESSED,
+                    "category": item["category"],
+                    "size_bytes": item["entry"]["size_bytes"],
+                    "original_name": item["name"],
+                    "temporary": False,
+                    "tool_output": tool_outputs[owner],
+                    "placed": not target.startswith(f"{FLAGGED}/"),
+                    "why": reasons,
+                }
+            )
+            continue
+
         if standard_names and subject and session_id:
             proposed = item.get("proposed")
             crowded = counts[(subject, session_id, proposed)] > 1
@@ -768,6 +856,7 @@ def build_plan(
                 "session": placement["session"],
                 "role": placement["role"],
                 "temporary": placement.get("temporary", False),
+                "tool_output": placement.get("tool_output"),
                 "placed": placement["placed"],
                 "why": placement["why"],
             }
@@ -1095,6 +1184,22 @@ def render_plan(
             add(f"      why   {reason}")
     if plan["placed_count"] > len(shown):
         add(f"  ... and {plan['placed_count'] - len(shown):,} more")
+
+    tools: Dict[str, int] = {}
+    for action in plan["actions"]:
+        label = action.get("tool_output")
+        if label:
+            tools[label] = tools.get(label, 0) + 1
+    if tools:
+        add("")
+        add("-" * 72)
+        add("TOOL OUTPUT, CARRIED ACROSS UNCHANGED")
+        add("-" * 72)
+        add("  These were written by an analysis tool that reads its own files")
+        add("  back by name. Renaming inside them would break that, so they")
+        add("  keep their filenames and internal structure exactly.")
+        for label, count in sorted(tools.items(), key=lambda item: -item[1]):
+            add(f"    {ndos_report._plural(count, 'file'):>12}  {label}")
 
     if plan.get("duplicates"):
         confirmed = sum(1 for d in plan["duplicates"] if d["confirmed"])
