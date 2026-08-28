@@ -280,3 +280,74 @@ class OrganizeIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidatedIndexTests(unittest.TestCase):
+    """The reference index the standard asks each project to carry.
+
+    "A table listing validated, high-quality data files — effectively a
+    reference index for automated pipelines." An analysis should read this
+    rather than globbing a directory and hoping.
+    """
+
+    def _project(self, base: Path):
+        good = _file(base, "processed_data/M123/20250314/spikes.csv", "sorted")
+        draft = _file(base, "processed_data/M123/20250314/attempt.csv", "maybe")
+        scratch = _file(base, "processed_data/M123/20250314/temp/temp_wh.dat", "x")
+        set_tags(good, {"validated": True}, note="curated in Phy", author="elnaz")
+        set_tags(scratch, {"validated": True, "temp": True})
+        return good, draft, scratch
+
+    def test_only_validated_files_are_listed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            self._project(base)
+
+            rows = ndos_tags.build_index(base)
+
+            self.assertEqual([row["path"] for row in rows],
+                             ["processed_data/M123/20250314/spikes.csv"])
+
+    def test_scratch_is_excluded_even_when_marked_validated(self):
+        # Validated and temporary at once is not something to build on.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            self._project(base)
+            rows = ndos_tags.build_index(base)
+            self.assertFalse(any("temp" in row["path"] for row in rows))
+
+    def test_the_index_carries_who_validated_it_and_when(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            self._project(base)
+
+            row = ndos_tags.build_index(base)[0]
+
+            self.assertEqual(row["validated_by"], "elnaz")
+            self.assertEqual(row["note"], "curated in Phy")
+            self.assertTrue(row["validated_at"])
+
+    def test_the_index_breaks_the_path_into_role_subject_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            self._project(base)
+
+            row = ndos_tags.build_index(base)[0]
+
+            self.assertEqual(row["role"], "processed_data")
+            self.assertEqual(row["subject"], "M123")
+            self.assertEqual(row["session"], "20250314")
+
+    def test_a_validated_file_that_has_since_vanished_is_not_listed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            good, _, _ = self._project(base)
+            good.unlink()
+
+            self.assertEqual(ndos_tags.build_index(base), [])
+
+    def test_a_project_with_nothing_validated_yields_an_empty_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            _file(base, "processed_data/M123/20250314/spikes.csv")
+            self.assertEqual(ndos_tags.build_index(base), [])

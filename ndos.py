@@ -33,6 +33,7 @@ COMMANDS: Tuple[Tuple[str, str, str], ...] = (
     ("organize", "ndos_organize", "Rebuild the N-DOS layout from existing structure"),
     ("table", "ndos_table", "Round-trip lab metadata through spreadsheets"),
     ("tags", "ndos_tags", "Flag data validated, temporary, or safe to delete"),
+    ("protect", "ndos_protect", "Make raw data read-only after acquisition"),
     ("query", "ndos_query", "Build a cohort, with the evidence behind each match"),
     ("prov", "ndos_prov", "Record what produced a result, and trace it back"),
     ("convert", "ndos_convert", "Hand off to BIDS and NWB workflows"),

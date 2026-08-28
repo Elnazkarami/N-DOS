@@ -24,7 +24,9 @@ Standard library only. Run it directly with no installation.
 from __future__ import annotations
 
 import argparse
+import csv
 import fnmatch
+import io
 import json
 import sys
 from datetime import datetime, timezone
@@ -438,6 +440,71 @@ def command_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def build_index(root: Path) -> List[Dict[str, Any]]:
+    """The validated files, as the reference index a pipeline can load.
+
+    The standard asks each project to carry a table of the data that has been
+    checked. That is the list an analysis should read, rather than globbing a
+    directory and hoping everything in it is good.
+    """
+    rows = []
+    for entry in select(collect(root), flag="validated"):
+        if not entry["exists"]:
+            continue
+        flags = entry["flags"]
+        if flags.get("temp") or flags.get("deletable"):
+            continue  # validated but also scratch: not something to build on
+        path = Path(entry["path"])
+        parts = path.relative_to(Path(root).expanduser().resolve()).parts
+        rows.append(
+            {
+                "path": entry["relative"],
+                "role": parts[0] if parts else "",
+                "subject": parts[1] if len(parts) > 2 else "",
+                "session": parts[2] if len(parts) > 3 else "",
+                "size_bytes": entry["size_bytes"],
+                "validated_by": flags.get("author", ""),
+                "validated_at": flags.get("updated_at", ""),
+                "note": flags.get("note", ""),
+            }
+        )
+    return sorted(rows, key=lambda row: row["path"])
+
+
+def command_index(args: argparse.Namespace) -> int:
+    rows = build_index(args.root)
+
+    if args.format == "json":
+        rendered = json.dumps(rows, indent=2) + "\n"
+    else:
+        buffer = io.StringIO()
+        columns = [
+            "path", "role", "subject", "session", "size_bytes",
+            "validated_by", "validated_at", "note",
+        ]
+        writer = csv.DictWriter(buffer, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+        rendered = buffer.getvalue()
+
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8-sig")
+        print(
+            f"{len(rows)} validated files -> {args.output}", file=sys.stderr
+        )
+    else:
+        print(rendered, end="")
+
+    if not rows:
+        print(
+            "Nothing is marked validated yet. Flag data you have checked with "
+            f"'{ndos_scan.invocation('ndos_tags')} set FILE --validated'.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def command_sweep(args: argparse.Namespace) -> int:
     plan = plan_sweep(args.root, include_inferred=args.include_untagged)
     print(render_sweep(plan, args.include_untagged), end="")
@@ -511,6 +578,17 @@ def main() -> int:
     lister.add_argument("--name", help="Only filenames matching this glob")
     lister.add_argument("-f", "--format", choices=("text", "json"), default="text")
     lister.set_defaults(func=command_list)
+
+    indexer = subparsers.add_parser(
+        "index",
+        help="Write the table of validated files a pipeline should read",
+    )
+    indexer.add_argument("root", type=Path, nargs="?", default=Path("."))
+    indexer.add_argument(
+        "-o", "--output", type=Path, help="Write here; stdout when omitted"
+    )
+    indexer.add_argument("-f", "--format", choices=("csv", "json"), default="csv")
+    indexer.set_defaults(func=command_index)
 
     sweeper = subparsers.add_parser(
         "sweep", help="Plan removal of temporary or deletable files"

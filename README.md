@@ -353,6 +353,27 @@ Scratch is judged relative to the project root, so a project living under
 session's `derived_metadata.json` — so a sweep finds it later without anyone
 remembering which files were intermediates.
 
+### `ndos_protect.py` — raw data read-only after acquisition
+
+The standard asks that raw data be set read-only once acquired. A recording is
+the one thing in a project that cannot be regenerated, and it is usually lost
+not to a disk failure but to a script writing where it meant to read.
+
+```bash
+python3 ndos.py protect ./my-study            # what it would change
+python3 ndos.py protect ./my-study --apply
+python3 ndos.py protect ./my-study --check    # has anything become writable?
+python3 ndos.py protect ./my-study --release
+```
+
+Only `raw_data/` by default; `processed_data/` is meant to change. Permissions
+are changed and contents never are. `--check` exits non-zero when something
+that should be read-only is not, so a scheduled job or a pre-publication check
+can use it.
+
+Releasing is as easy as protecting, deliberately: a protection people cannot
+undo is one they work around by copying data somewhere unprotected.
+
 ### `ndos_query.py` — build a cohort, and see why each session qualified
 
 ```bash
@@ -529,11 +550,12 @@ additionally validates generated manifests against the published schema.
 | `ndos_archive.py` | Archive inspection and planned extraction |
 | `ndos_organize.py` | Rebuild the N-DOS layout from existing structure |
 | `ndos_table.py` | Linked metadata tables |
-| `ndos_tags.py` | Validation, temporary and deletion flags |
+| `ndos_tags.py` | Validation flags, cleanup, validated-file index |
+| `ndos_protect.py` | Make raw data read-only after acquisition |
 | `ndos_query.py` | Cohort queries with evidence citation |
 | `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_convert.py` | BIDS and NWB handoff |
-| `ndos_init.py` | Project initialisation |
+| `ndos_init.py` | Start a project, and make a session folder |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
 | `LEGACY.md` | Where the superseded prototypes went, and why |
