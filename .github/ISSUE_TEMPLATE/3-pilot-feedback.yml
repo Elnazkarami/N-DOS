@@ -1,5 +1,5 @@
 name: Pilot feedback
-description: You tried NDOS on real lab data — how did it go?
+description: You tried NDOS, on an archive or on a new project — how did it go?
 labels: ["pilot"]
 body:
   - type: markdown
@@ -9,6 +9,17 @@ body:
         are more useful than kind ones, and "I gave up at step 3" is a result.
 
         **No data required.** Describe what you were doing, not what was in it.
+
+  - type: dropdown
+    id: situation
+    attributes:
+      label: Which were you doing?
+      options:
+        - "Starting a new project, or organising data as it comes in"
+        - "Working out what is in an archive I inherited"
+        - Both
+    validations:
+      required: true
 
   - type: textarea
     id: task
@@ -62,8 +73,22 @@ body:
         - "Yes, after reading what it said it would do"
         - "Not really — I worked on a copy"
         - "No"
+        - "Not applicable — I had no data at risk"
     validations:
       required: true
+
+  - type: textarea
+    id: fit
+    attributes:
+      label: Does the structure fit how your lab actually works?
+      description: >-
+        Your modality, your acquisition software, the way you already think
+        about subjects and sessions. Somewhere it does not fit is worth more
+        than somewhere it does — a convention that disagrees with the standard
+        for a good reason is how the standard gets better.
+      placeholder: >-
+        We record two animals simultaneously and one session covers both, which
+        this has nowhere to put.
 
   - type: textarea
     id: keep
