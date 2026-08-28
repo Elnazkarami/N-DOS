@@ -51,7 +51,7 @@ jobs:
         run: |
           python ndos.py --help
           python ndos.py --version
-          python -c "import ndos, ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert, ndos_protect"
+          python -c "import ndos, ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert, ndos_protect, ndos_validate"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
@@ -63,6 +63,7 @@ jobs:
           python ndos_tags.py --help
           python ndos_convert.py --help
           python ndos_protect.py --help
+          python ndos_validate.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -104,6 +105,8 @@ jobs:
           echo data > /tmp/fresh/raw_data/M123/20250314/M123_20250314_raw.dat
           python ndos_protect.py /tmp/fresh --apply --yes
           python ndos_protect.py /tmp/fresh --check
+          # A project built by init must conform to the standard it implements.
+          python ndos_validate.py /tmp/fresh
           # Handoff: BIDS-shaped export and an NWB conversion plan.
           python ndos_convert.py bids /tmp/project2 -d /tmp/bids --write
           test -f /tmp/bids/dataset_description.json

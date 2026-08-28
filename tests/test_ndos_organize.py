@@ -511,3 +511,112 @@ class PilotFindingsTests(unittest.TestCase):
             self.assertIn("run 'apply'", planning)
             self.assertNotIn("run 'apply'", applying)
             self.assertNotIn("Nothing has been created", applying)
+
+
+class ToolOutputTests(unittest.TestCase):
+    """Directories an analysis tool reads back by name.
+
+    Phy, Kilosort and SpikeInterface open a sorting by looking for
+    `spike_times.npy` and `params.py`. Renaming those to the N-DOS convention
+    means the sorting can no longer be opened, which is the opposite of what
+    organising it is for.
+    """
+
+    PHY = [
+        "M123/2025_03_14/phy_output/params.py",
+        "M123/2025_03_14/phy_output/spike_times.npy",
+        "M123/2025_03_14/phy_output/spike_clusters.npy",
+        "M123/2025_03_14/phy_output/channel_positions.npy",
+        "M123/2025_03_14/phy_output/cluster_info.tsv",
+    ]
+
+    def test_a_sorting_folder_keeps_every_filename(self):
+        placements = derive(_manifest(self.PHY))
+        for placement in placements:
+            self.assertEqual(
+                Path(placement["target"]).name, placement["original_name"]
+            )
+
+    def test_it_lands_under_the_session_it_belongs_to(self):
+        placements = derive(_manifest(self.PHY))
+        for placement in placements:
+            self.assertTrue(
+                placement["target"].startswith(
+                    "processed_data/M123/20250314/phy_output/"
+                ),
+                placement["target"],
+            )
+
+    def test_channel_positions_is_not_retyped_as_behavioural_tracking(self):
+        # _position is the naming convention's behavioural tracking suffix.
+        # channel_positions.npy is electrode geometry; calling it position
+        # data would be wrong as well as unreadable.
+        placement = next(
+            p for p in derive(_manifest(self.PHY))
+            if p["original_name"] == "channel_positions.npy"
+        )
+        self.assertEqual(Path(placement["target"]).name, "channel_positions.npy")
+
+    def test_the_reason_says_why_it_was_left_alone(self):
+        placement = derive(_manifest(self.PHY))[0]
+        why = " ".join(placement["why"])
+        self.assertIn("Phy", why)
+        self.assertIn("reading it back", why)
+
+    def test_nested_structure_inside_the_output_is_preserved(self):
+        # Open Ephys keeps continuous/<processor>/continuous.dat, and the
+        # reader walks that path.
+        placements = derive(
+            _manifest(
+                [
+                    "M123/2025_03_14/rec/structure.oebin",
+                    "M123/2025_03_14/rec/continuous/Rhythm_FPGA-100.0/continuous.dat",
+                ]
+            )
+        )
+        targets = sorted(p["target"] for p in placements)
+        self.assertEqual(
+            targets,
+            [
+                "processed_data/M123/20250314/rec/continuous/Rhythm_FPGA-100.0/continuous.dat",
+                "processed_data/M123/20250314/rec/structure.oebin",
+            ],
+        )
+
+    def test_a_zarr_store_is_carried_whole(self):
+        placements = derive(
+            _manifest(
+                [
+                    "M123/2025_03_14/wf.zarr/.zgroup",
+                    "M123/2025_03_14/wf.zarr/traces/0.0",
+                ]
+            )
+        )
+        for placement in placements:
+            self.assertIn("wf.zarr/", placement["target"])
+
+    def test_files_beside_a_tool_output_are_still_renamed(self):
+        # Only what is inside the tool's directory is exempt.
+        placements = derive(
+            _manifest(self.PHY + ["M123/2025_03_14/0.avi"])
+        )
+        video = next(p for p in placements if p["original_name"] == "0.avi")
+        self.assertEqual(Path(video["target"]).name, "M123_20250314_video.avi")
+
+    def test_a_folder_missing_the_marker_files_is_not_treated_as_tool_output(self):
+        # Two .npy files are not a sorting; the markers are what identify one.
+        placements = derive(
+            _manifest(
+                [
+                    "M123/2025_03_14/results/values.npy",
+                    "M123/2025_03_14/results/other.npy",
+                ]
+            )
+        )
+        self.assertTrue(
+            all(p["tool_output"] is None for p in placements)
+            if all("tool_output" in p for p in placements)
+            else True
+        )
+        names = {Path(p["target"]).name for p in placements}
+        self.assertTrue(any(name.startswith("M123_20250314_") for name in names))

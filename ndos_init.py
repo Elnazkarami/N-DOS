@@ -81,6 +81,37 @@ ndos table check ./metadata_tables         # what is still missing
 ndos query linked.json -w species=mouse    # find sessions later
 ```
 
+## File naming
+
+`<SubjectID>_<SessionID>_<type>.<ext>`, for example:
+
+| Type | Example |
+| --- | --- |
+| Raw electrophysiology | `M123_20250314_raw.dat` or `.nwb` |
+| LFP | `M123_20250314_lfp.npy` |
+| Spikes | `M123_20250314_spikes.csv` |
+| Behaviour | `M123_20250314_behavior.tsv` |
+| Task | `M123_20250314_task.tsv` |
+| Position tracking | `M123_20250314_position.tsv` |
+| Experimenter input | `M123_20250314_experimenter.tsv` |
+| Video | `M123_20250314_video.mp4` |
+
+Add `_v1`, `_v2` when something is reprocessed.
+
+**A note for whoever configures acquisition:** where you can choose, record
+video as H.264-encoded MP4. It is the one setting here that is easier to get
+right at the rig than to correct afterwards — re-encoding later means either
+losing quality or keeping two copies, and raw data is meant to stay as
+acquired. Where your hardware writes something else, keep what it writes.
+NDOS does not check this and will not re-encode anything.
+
+## Output from analysis tools
+
+Folders written by Phy, Kilosort, SpikeInterface, suite2p, Open Ephys or a
+Zarr store are kept exactly as those tools wrote them — their filenames are
+how the tools find their own data. Put them under the session they belong to
+and leave their contents alone.
+
 Raw data is meant to stay as acquired. Anything that changes it belongs in
 `processed_data/`, and anything uncertain belongs in `flagged_data/` with a
 note saying why.

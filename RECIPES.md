@@ -83,6 +83,18 @@ filename, and a two-digit year is resolved to this century. If yours use a
 different separator or ordering and end up in `flagged_data/`, that is worth
 reporting — see the last section.
 
+## "Will this break my spike sorting?"
+
+No. A Phy or Kilosort output folder is recognised by the files those tools
+require — `params.py`, `spike_times.npy` — and carried across whole, with every
+filename and the structure below it untouched. The same holds for
+SpikeInterface folders, suite2p output, Open Ephys recordings, DeepLabCut
+projects and Zarr stores.
+
+The plan lists them under "TOOL OUTPUT, CARRIED ACROSS UNCHANGED". If a tool
+you use is not recognised and its files were renamed, that is a bug worth
+reporting — tell us which marker files identify it.
+
 ## "I don't like the new filenames"
 
 NDOS renames to `SubjectID_SessionID_type` because the standard says so. To
