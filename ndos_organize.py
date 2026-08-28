@@ -251,10 +251,20 @@ def subject_and_session_from_name(
     )
 
 
+def _names_a_session(segment: str) -> bool:
+    """Whether a folder name is a session or run rather than a subject."""
+    return any(pattern.match(segment) for pattern in SESSION_PATTERNS)
+
+
 def _find_subject(segments: Sequence[str]) -> Tuple[Optional[str], Optional[str]]:
     """The subject, and the reason it was chosen, from the original path."""
     candidates = []
     for segment in segments:
+        # "ses-01" is letters followed by digits, so the generic identifier
+        # pattern matches it. Taking the deepest match then read the session
+        # as the animal and called the animal a cohort.
+        if _names_a_session(segment):
+            continue
         for pattern in SUBJECT_PATTERNS:
             match = pattern.match(segment)
             if match:
@@ -278,15 +288,6 @@ def _find_session(
     Directories are searched first, then the filename: a session archived as
     `2020_11_20.zip` carries its date in the name and nowhere else.
     """
-    for segment in segments:
-        for pattern in SESSION_PATTERNS:
-            match = pattern.match(segment)
-            if match:
-                return (
-                    {"label": f"ses-{int(match.group(1)):02d}"},
-                    f"folder {segment!r} names a session",
-                )
-
     # A segment such as A0634_201122_183220 holds subject, date and time in
     # one directory name. This shape appears throughout real lab storage.
     for segment in segments:
@@ -339,6 +340,18 @@ def _find_session(
                     )
 
     if not date:
+        # No date anywhere, so an explicitly numbered session is the best
+        # identifier available. The standard prefers a date; where the data
+        # does not carry one, inventing it would be worse.
+        for segment in segments:
+            for pattern in SESSION_PATTERNS:
+                match = pattern.match(segment)
+                if match:
+                    return (
+                        {"label": f"ses-{int(match.group(1)):02d}"},
+                        f"folder {segment!r} names a session, and no date is "
+                        "recorded in the path",
+                    )
         return None, None
 
     for segment in segments:

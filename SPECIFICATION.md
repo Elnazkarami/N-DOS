@@ -74,12 +74,17 @@ which files were intermediates.
 the life of that subject. It SHOULD be short and human-readable: `M123` for
 mouse 123.
 
-**SessionID** MUST be the acquisition date as `YYYYMMDD`. Where a subject was
-recorded more than once that day, it MUST be `YYYYMMDD_NN`, numbered from `01`
-in acquisition order.
+**SessionID** MUST be unique within a subject, and MUST NOT contain a date in
+a form where day and month can be confused: `03/04/2025` names two different
+days depending on the reader's country.
 
-Dates MUST NOT be written in any form where the day and month can be confused.
-`03/04/2025` names two different days depending on the reader's country.
+It SHOULD be the acquisition date as `YYYYMMDD`, and `YYYYMMDD_NN` where a
+subject was recorded more than once that day, numbered from `01` in
+acquisition order.
+
+Some data records a session without recording its date — a folder named only
+`ses-01`. Such a project still conforms; `ses-01` is a worse identifier than a
+date, but inventing a date it does not have would be worse still.
 
 ## 4. File naming
 
@@ -188,7 +193,9 @@ A project conforms to N-DOS 0.1 when:
 
 1. The eight directories of §1 and a `README.md` are present.
 2. Every file under `raw_data/` sits at `<SubjectID>/<SessionID>/` (§2).
-3. Every `SessionID` is `YYYYMMDD` or `YYYYMMDD_NN` (§3).
+3. Every `SessionID` is unique within its subject and free of ambiguous dates
+   (§3). A session not named as a date is reported as a recommendation, not a
+   failure.
 
 These are the requirements a tool can check by looking at a project. The other
 MUSTs in this document — that raw data is not modified after acquisition, that
