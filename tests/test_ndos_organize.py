@@ -671,3 +671,81 @@ class SubjectVersusSessionTests(unittest.TestCase):
                 [f["message"] for f in result["findings"]
                  if f["level"] == "requirement"],
             )
+
+
+class DeclaredDateTests(unittest.TestCase):
+    """Turning a session nobody can place in time into a dated one.
+
+    The standard establishes YYYYMMDD because it makes a recording traceable:
+    it sorts, and it can be matched against a notebook years later. Where the
+    folders do not carry a date but a person knows it, recording it should be
+    enough — nobody should have to rename directories by hand.
+    """
+
+    LAYOUT = ["sub-01/ses-01/rec.dat", "sub-01/ses-02/rec.dat"]
+
+    def test_without_a_recorded_date_the_label_is_kept(self):
+        placements = derive(_manifest(self.LAYOUT))
+        self.assertEqual(
+            sorted(p["session"] for p in placements), ["ses-01", "ses-02"]
+        )
+
+    def test_a_recorded_date_becomes_the_session_id(self):
+        dates = {"sub-01/ses-01": "2025-03-14", "sub-01/ses-02": "2025-03-15"}
+        placements = derive(_manifest(self.LAYOUT), declared_dates=dates)
+
+        self.assertEqual(
+            sorted(p["session"] for p in placements), ["20250314", "20250315"]
+        )
+
+    def test_it_says_where_the_date_came_from(self):
+        dates = {"sub-01/ses-01": "2025-03-14"}
+        placement = derive(_manifest(self.LAYOUT), declared_dates=dates)[0]
+        why = " ".join(placement["why"])
+        self.assertIn("recorded for", why)
+        self.assertIn("metadata", why)
+
+    def test_a_date_already_in_the_path_is_not_overridden(self):
+        # The folders are the record; metadata fills gaps rather than
+        # rewriting what the data already says.
+        dates = {"2025-03-14/M01": "2020-01-01"}
+        placement = derive(
+            _manifest(["2025-03-14/M01/rec.dat"]), declared_dates=dates
+        )[0]
+        self.assertEqual(placement["session"], "20250314")
+
+    def test_an_unusable_recorded_date_is_ignored(self):
+        dates = {"sub-01/ses-01": "14/03/2025"}
+        placement = derive(_manifest(self.LAYOUT), declared_dates=dates)[0]
+        # Ambiguous, so it is not used; the label stands.
+        self.assertEqual(placement["session"], "ses-01")
+
+    def test_dates_can_be_read_from_a_metadata_directory(self):
+        import ndos_scan
+        import ndos_table
+        from ndos_organize import read_declared_dates
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for session in ("ses-01", "ses-02"):
+                folder = base / "lab" / "sub-01" / session
+                folder.mkdir(parents=True)
+                (folder / "rec.dat").write_bytes(b"x")
+
+            manifest = ndos_scan.scan(
+                base / "lab", include_checksums=False, progress=False
+            )
+            metadata = base / "meta"
+            ndos_table.export_metadata(manifest, metadata)
+
+            rows = ndos_table.read_table(metadata / ndos_table.SESSIONS_FILE)
+            # Each session is its own row: a lab with one animal and two
+            # sessions is a real project.
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                if row["observed_path"].endswith("ses-01"):
+                    row["session_date"] = "2025-03-14"
+            ndos_table.write_table(rows, metadata / ndos_table.SESSIONS_FILE)
+
+            dates = read_declared_dates(metadata)
+            self.assertEqual(dates.get("sub-01/ses-01"), "2025-03-14")
