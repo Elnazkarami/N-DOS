@@ -218,6 +218,18 @@ class IssueTemplateTests(unittest.TestCase):
                     f"{path.name} refers to {name}, which is not in the repo",
                 )
 
+    def test_the_readme_links_to_templates_that_exist(self):
+        import re
+
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        linked = set(re.findall(r"issues/new\?template=([\w.-]+\.yml)", text))
+        self.assertTrue(linked, "README does not link any issue template")
+        for name in linked:
+            self.assertTrue(
+                (ROOT / self.TEMPLATES / name).is_file(),
+                f"README links {name}, which does not exist",
+            )
+
     def test_a_report_can_be_filed_without_sharing_any_data(self):
         # Lab data is unpublished. If filing a bug seemed to require sending
         # some, people would simply not file.
