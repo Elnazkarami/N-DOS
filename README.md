@@ -267,6 +267,12 @@ Structure is read from directory names, from filenames when the folders are
 silent (`2020_11_20.zip` carries its date nowhere else), and from compound
 names like `A0634_201122_183220`.
 
+Where the folders record a session but not when it happened, `--dates` takes
+the date from your `sessions.csv`, turning `ses-01` into `20250314`. A dated
+identifier is what the standard establishes, because it places a recording in
+time without opening anything. A date already in the path is never
+overridden.
+
 **Analysis-tool output is left alone.** A Phy or Kilosort sorting is opened by
 looking for `spike_times.npy` and `params.py` by name, so renaming inside one
 would stop the tool reading it back. Directories written by Phy, Kilosort,

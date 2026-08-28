@@ -234,11 +234,16 @@ def _classify_name(name: str) -> Optional[str]:
     return None
 
 
-def structure(files: Sequence[Dict[str, Any]], min_names: int = 3) -> List[Dict[str, Any]]:
+def structure(files: Sequence[Dict[str, Any]], min_names: int = 1) -> List[Dict[str, Any]]:
     """Infer what each directory depth appears to represent.
 
     Reported as an observation, never as a conclusion: NDOS labels this as
     inferred evidence and expects a human to confirm or correct it.
+
+    Levels holding a single name are included. A lab with one animal and two
+    sessions is a real project, and requiring three distinct names before a
+    level counted meant its sessions were merged into one. The number of
+    distinct names is reported alongside, so thin evidence is visible as thin.
     """
     names_at_depth: Dict[int, Counter] = defaultdict(Counter)
     for entry in files:

@@ -95,6 +95,24 @@ The plan lists them under "TOOL OUTPUT, CARRIED ACROSS UNCHANGED". If a tool
 you use is not recognised and its files were renamed, that is a bug worth
 reporting — tell us which marker files identify it.
 
+## "My folders don't record the date, but I know it"
+
+Sessions named `ses-01` keep that name, because inventing a date the data does
+not have would be worse. But a dated identifier is what makes a recording
+traceable — it sorts, and it can be matched against a notebook years later.
+
+If you know the dates, write them in `sessions.csv` and hand that back:
+
+```bash
+python3 ndos.py table export /path/to/data -d ./metadata
+# fill in session_date for the sessions you know
+python3 ndos.py organize plan /path/to/data -d ./project --dates ./metadata
+```
+
+`ses-01` becomes `20250314`, and the plan says where the date came from. A date
+already in the folder names is never overridden — metadata fills gaps rather
+than rewriting what the data already says.
+
 ## "I don't like the new filenames"
 
 NDOS renames to `SubjectID_SessionID_type` because the standard says so. To

@@ -193,8 +193,9 @@ def _check_recommendations(root: Path) -> List[Dict[str, Any]]:
         findings.append(_recommendation(
             "session-id-not-a-date",
             f"{len(undated)} sessions are not named as YYYYMMDD",
-            "a date is a better identifier where the data records one; where "
-            "it does not, this is fine",
+            "a dated identifier places a recording in time without opening "
+            "anything. If you know the dates, put them in sessions.csv and "
+            "re-run: ndos organize plan <source> -d <project> --dates <metadata>",
             ", ".join(f"{s}/{n}" for s, n in undated[:3]),
         ))
 

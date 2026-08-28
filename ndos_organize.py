@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ndos_report
 import ndos_scan
+import ndos_table
 import ndos_tags
 
 LAYOUT_VERSION = "0.1"
@@ -188,6 +189,9 @@ SESSION_GAP_SECONDS = 600
 
 #: Characters that have no place in a standardised name.
 UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+#: A date as the standard writes it.
+ISO_DATE_TEXT = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 #: Names like A0634_201122_183220: subject, then YYMMDD, then HHMMSS.
 COMPOUND_SEGMENT = re.compile(r"^[A-Za-z]{1,4}\d{2,6}[-_](\d{6})[-_](\d{6})$")
@@ -531,6 +535,54 @@ def _owning_tool_output(path: str, outputs: Dict[str, str]) -> Optional[str]:
     return None
 
 
+def read_declared_dates(source: Path) -> Dict[str, str]:
+    """Session dates a person recorded, keyed by the path they describe.
+
+    A folder named only `ses-01` says a session happened but not when. Once
+    someone writes the date in sessions.csv, that is the missing fact, and the
+    layout can carry it: an identifier that says when a recording happened is
+    what makes a session locatable in time without opening anything.
+    """
+    source = Path(source).expanduser()
+    if source.is_dir():
+        source = source / ndos_table.SESSIONS_FILE
+    if not source.is_file():
+        return {}
+
+    dates: Dict[str, str] = {}
+    if source.suffix.lower() == ".json":
+        try:
+            content = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        for session in content.get("sessions", []):
+            path = session.get("observed", {}).get("path", "")
+            declared = session.get("declared", {}).get("session_date", {})
+            if path and declared.get("value"):
+                dates[path] = declared["value"]
+        return dates
+
+    try:
+        for row in ndos_table.read_table(source):
+            path = (row.get("observed_path") or "").strip()
+            date = (row.get("session_date") or "").strip()
+            if path and date:
+                dates[path] = date
+    except (OSError, ValueError):
+        return {}
+    return dates
+
+
+def _declared_for(path: str, dates: Dict[str, str]) -> Optional[Tuple[str, str]]:
+    """The recorded date covering a file, and the path it was recorded against."""
+    parts = path.split("/")[:-1]
+    for depth in range(len(parts), 0, -1):
+        prefix = "/".join(parts[:depth])
+        if prefix in dates:
+            return dates[prefix], prefix
+    return None
+
+
 def _at_depth(directories: Sequence[str], depth: Optional[int]) -> Optional[str]:
     """The directory name at a given level, if the path is that deep."""
     if depth is None or depth < 0 or len(directories) <= depth:
@@ -544,6 +596,7 @@ def derive(
     standard_names: bool = True,
     subject_depth: Optional[int] = None,
     session_depth: Optional[int] = None,
+    declared_dates: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Decide where every file belongs, and say why.
 
@@ -593,6 +646,19 @@ def derive(
             session, session_reason = named_session, named_reason
         else:
             session, session_reason = _find_session(directories, name)
+
+        # A date somebody recorded outranks a bare label the folder happened
+        # to carry: it is the fact the path was missing.
+        if declared_dates and (not session or "date" not in session):
+            declared = _declared_for(entry["path"], declared_dates)
+            if declared:
+                value, against = declared
+                if ISO_DATE_TEXT.match(value):
+                    session = {"date": value}
+                    session_reason = (
+                        f"date {value} recorded for {against!r} in the metadata; "
+                        "the folder name did not carry one"
+                    )
         role, role_reason = _find_role(directories, category)
 
         found.append(
@@ -794,6 +860,7 @@ def build_plan(
     standard_names: bool = True,
     subject_depth: Optional[int] = None,
     session_depth: Optional[int] = None,
+    declared_dates: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """A complete, reviewable description of the tree that would be built."""
     source_root = Path(manifest["source_root"])
@@ -804,6 +871,7 @@ def build_plan(
         standard_names=standard_names,
         subject_depth=subject_depth,
         session_depth=session_depth,
+        declared_dates=declared_dates,
     )
 
     by_source = {entry["path"]: entry for entry in manifest["files"]}
@@ -1282,6 +1350,7 @@ def command_plan(args: argparse.Namespace) -> int:
         manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
         standard_names=not args.keep_original_names,
         subject_depth=args.subject_depth, session_depth=args.session_depth,
+        declared_dates=read_declared_dates(args.dates) if args.dates else None,
     )
     rendered = (
         json.dumps(plan, indent=2) + "\n" if args.format == "json"
@@ -1308,6 +1377,7 @@ def command_apply(args: argparse.Namespace) -> int:
             manifest, args.dest, mode=args.mode, strip_prefix=args.strip,
             standard_names=not args.keep_original_names,
             subject_depth=args.subject_depth, session_depth=args.session_depth,
+            declared_dates=read_declared_dates(args.dates) if args.dates else None,
         )
 
     # Without footer=False this ended a successful run by telling the user to
@@ -1410,6 +1480,13 @@ def main() -> int:
             help="The session is the folder at level N, rather than guessing",
         ),
         p.add_argument(
+            "--dates", type=Path, metavar="FILE",
+            help=(
+                "sessions.csv, a metadata directory, or linked.json: use the "
+                "session dates recorded there where a folder name has none"
+            ),
+        ),
+        p.add_argument(
             "--keep-original-names", action="store_true",
             help="Do not apply the N-DOS SubjectID_SessionID_type naming",
         ),
@@ -1433,6 +1510,7 @@ def main() -> int:
     apply_parser.add_argument("--keep-original-names", action="store_true")
     apply_parser.add_argument("--subject-depth", type=int, metavar="N")
     apply_parser.add_argument("--session-depth", type=int, metavar="N")
+    apply_parser.add_argument("--dates", type=Path, metavar="FILE")
     apply_parser.add_argument("--plan-file", type=Path, help="A plan saved earlier")
     apply_parser.add_argument("--yes", action="store_true", help="Skip the confirmation")
     apply_parser.add_argument("--force", action="store_true", help="Proceed despite low space")

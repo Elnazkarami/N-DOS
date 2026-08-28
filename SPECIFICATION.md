@@ -80,11 +80,21 @@ days depending on the reader's country.
 
 It SHOULD be the acquisition date as `YYYYMMDD`, and `YYYYMMDD_NN` where a
 subject was recorded more than once that day, numbered from `01` in
-acquisition order.
+acquisition order. **This is the convention N-DOS establishes**, and the
+reason is traceability: an identifier that carries the date places a recording
+in time without opening anything, sorts chronologically on its own, and can be
+matched against a notebook, a surgery log or an order record years later.
+`ses-01` can do none of that.
 
-Some data records a session without recording its date — a folder named only
-`ses-01`. Such a project still conforms; `ses-01` is a worse identifier than a
-date, but inventing a date it does not have would be worse still.
+Some data records a session without recording when it happened. Such a project
+still conforms, because inventing a date the data does not have would be worse
+than an imperfect label. That flexibility is for data, not for choice: a
+project being organised now SHOULD use the date.
+
+Where the date is known to a person but absent from the folders, it SHOULD be
+recorded in the session metadata, from where the layout can take it. Doing so
+converts an untraceable `ses-01` into a dated identifier without anyone
+guessing.
 
 ## 4. File naming
 
