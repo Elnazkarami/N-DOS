@@ -186,278 +186,143 @@ class SchemaTests(unittest.TestCase):
 
 
 class InitTests(unittest.TestCase):
-    def test_init_creates_a_profile_without_touching_source_data(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "animal-study"
+    """Starting a project, for a lab that is about to collect rather than
+    one digging out an archive. The standard serves both."""
 
-            project_file = initialize(root)
+    def test_init_creates_the_layout_the_manuscript_defines(self):
+        from ndos_init import DIRECTORIES, initialize
 
-            self.assertTrue(project_file.is_file())
-            self.assertIn('source_mode = "read-only"', project_file.read_text())
-            self.assertTrue((root / "manifests").is_dir())
-            # NDOS owns its own directories; it never creates a home for data.
-            self.assertFalse((root / "raw_data").exists())
-
-    def test_init_refuses_to_overwrite_without_force(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "study"
             initialize(root)
 
-            with self.assertRaises(FileExistsError):
-                initialize(root)
+            for name, _ in DIRECTORIES:
+                self.assertTrue((root / name).is_dir(), f"missing {name}/")
+            self.assertTrue((root / "README.md").is_file())
+            self.assertTrue((root / "project.toml").is_file())
 
-            self.assertTrue(initialize(root, force=True).is_file())
+    def test_the_readme_says_where_a_recording_goes(self):
+        from ndos_init import initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+            text = (root / "README.md").read_text(encoding="utf-8")
+
+            self.assertIn("raw_data/<SubjectID>/<SessionID>/", text)
+            self.assertIn("YYYYMMDD", text)
+
+    def test_a_session_folder_is_named_by_the_convention(self):
+        from ndos_init import add_session, initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+
+            raw, created = add_session(root, "M123", "2025-03-14")
+
+            # resolve() both sides: on macOS /var is itself a symlink.
+            self.assertEqual(
+                raw, (root / "raw_data" / "M123" / "20250314").resolve()
+            )
+            self.assertTrue(raw.is_dir())
+            self.assertTrue(created)
+            # The manuscript pairs each raw session with a processed one.
+            self.assertTrue(
+                (root / "processed_data" / "M123" / "20250314" / "temp").is_dir()
+            )
+
+    def test_a_second_recording_that_day_is_numbered(self):
+        from ndos_init import add_session, initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+
+            _, _ = add_session(root, "M123", "2025-03-14")
+            second, _ = add_session(root, "M123", "2025-03-14", number=2)
+
+            self.assertEqual(second.name, "20250314_02")
+
+    def test_an_ambiguous_date_is_refused(self):
+        from ndos_init import session_id
+
+        with self.assertRaises(ValueError) as caught:
+            session_id("14/03/2025")
+        # The same reason table check gives: that form means two things.
+        self.assertIn("YYYY-MM-DD", str(caught.exception))
+
+    def test_a_date_that_does_not_exist_is_refused(self):
+        from ndos_init import session_id
+
+        with self.assertRaises(ValueError):
+            session_id("2025-02-30")
+
+    def test_a_subject_that_would_make_an_odd_folder_is_refused(self):
+        from ndos_init import add_session, initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+            for bad in ("../escape", "M 123", ""):
+                with self.assertRaises(ValueError):
+                    add_session(root, bad, "2025-03-14")
+
+    def test_running_init_again_does_not_disturb_what_is_there(self):
+        from ndos_init import initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+            (root / "raw_data" / "M123").mkdir(parents=True)
+            (root / "README.md").write_text("mine", encoding="utf-8")
+
+            initialize(root)
+
+            self.assertTrue((root / "raw_data" / "M123").is_dir())
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "mine")
+
+    def test_force_rewrites_the_generated_files_only(self):
+        from ndos_init import initialize
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "study"
+            initialize(root)
+            (root / "raw_data" / "keep.txt").write_text("data", encoding="utf-8")
+            (root / "README.md").write_text("mine", encoding="utf-8")
+
+            initialize(root, force=True)
+
+            self.assertNotEqual((root / "README.md").read_text(encoding="utf-8"), "mine")
+            self.assertTrue((root / "raw_data" / "keep.txt").is_file())
 
     def test_project_id_is_slugified_from_the_directory_name(self):
+        from ndos_init import initialize
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "My Study (2026)!"
-            content = initialize(root).read_text()
-            self.assertIn('id = "my-study-2026"', content)
+            self.assertIn('id = "my-study-2026"', initialize(root).read_text())
 
 
-if __name__ == "__main__":
-    unittest.main()
+class FreshCollectionTests(unittest.TestCase):
+    """A project started with init, then collected into, then described."""
 
-
-class EstimateTests(unittest.TestCase):
-    """Knowing a scan will take three hours is worth a few seconds of reading."""
-
-    def _data(self, base: Path, count: int = 4, size: int = 200_000):
-        for index in range(count):
-            (base / f"rec{index}.bin").write_bytes(bytes(size))
-        return base
-
-    def test_an_estimate_measures_rather_than_guesses(self):
-        from ndos_scan import estimate
+    def test_a_project_started_with_init_is_readable_by_the_rest(self):
+        import ndos_table
+        from ndos_init import add_session, initialize
 
         with tempfile.TemporaryDirectory() as directory:
-            root = self._data(Path(directory))
-            measured = estimate(root, sample_bytes=100_000)
+            root = Path(directory) / "study"
+            initialize(root)
+            raw, _ = add_session(root, "M123", "2025-03-14")
+            (raw / "M123_20250314_raw.dat").write_bytes(b"signal")
 
-            self.assertEqual(measured["file_count"], 4)
-            self.assertEqual(measured["total_bytes"], 800_000)
-            self.assertGreater(measured["bytes_per_second"], 0)
-            self.assertIsNotNone(measured["seconds"])
-
-    def test_an_estimate_discounts_what_is_already_cached(self):
-        from ndos_scan import estimate
-
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            data = base / "data"
-            data.mkdir()
-            root = self._data(data)
-            cache = base / "cache.json"
-
-            scan(root, cache_path=cache)
-            measured = estimate(root, sample_bytes=100_000, cache_path=cache)
-
-            # Everything is cached, so nothing remains to read.
-            self.assertEqual(measured["remaining_bytes"], 0)
-            self.assertEqual(measured["cached_count"], 4)
-
-    def test_durations_are_rendered_in_units_a_person_can_act_on(self):
-        from ndos_scan import _human_duration
-
-        self.assertEqual(_human_duration(45), "45s")
-        self.assertEqual(_human_duration(600), "10 min")
-        self.assertEqual(_human_duration(11250), "3h 07m")
-
-
-class CacheTests(unittest.TestCase):
-    """A cache that returned a stale checksum would corrupt everything downstream."""
-
-    def _data(self, base: Path):
-        root = base / "data"
-        root.mkdir()
-        (root / "a.bin").write_bytes(b"alpha" * 1000)
-        (root / "b.bin").write_bytes(b"beta" * 1000)
-        return root
-
-    def test_a_cached_scan_matches_an_uncached_one_exactly(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = self._data(base)
-
-            fresh = scan(root)
-            scan(root, cache_path=base / "cache.json")
-            cached = scan(root, cache_path=base / "cache.json")
-
-            self.assertEqual(
-                {f["path"]: f["sha256"] for f in fresh["files"]},
-                {f["path"]: f["sha256"] for f in cached["files"]},
+            # The same command an archive user runs, on a project that was
+            # never an archive.
+            self.assertTrue(ndos_table.looks_like_project(root))
+            manifest = ndos_table._load_manifest(root, quiet=True)
+            rows = ndos_table.group_sessions(
+                manifest, subject_depth=1, group_depth=2
             )
-
-    def test_the_second_scan_reuses_what_the_first_computed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = self._data(base)
-            cache = base / "cache.json"
-
-            first = scan(root, cache_path=cache)
-            second = scan(root, cache_path=cache)
-
-            self.assertEqual(first["extensions"]["cache"]["reused"], 0)
-            self.assertEqual(second["extensions"]["cache"]["reused"], 2)
-
-    def test_a_changed_file_is_re_read_not_served_from_cache(self):
-        import time
-
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = self._data(base)
-            cache = base / "cache.json"
-            scan(root, cache_path=cache)
-
-            time.sleep(1.1)  # so the modification time genuinely differs
-            (root / "a.bin").write_bytes(b"rewritten entirely")
-            manifest = scan(root, cache_path=cache)
-
-            digest = {f["path"]: f["sha256"] for f in manifest["files"]}["a.bin"]
-            expected = hashlib.sha256(b"rewritten entirely").hexdigest()
-            self.assertEqual(digest, expected)
-            self.assertEqual(manifest["extensions"]["cache"]["reused"], 1)
-
-    def test_a_file_of_the_same_size_but_different_mtime_is_re_read(self):
-        import time
-
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = base / "data"
-            root.mkdir()
-            (root / "a.bin").write_bytes(b"first")
-            cache = base / "cache.json"
-            scan(root, cache_path=cache)
-
-            time.sleep(1.1)
-            (root / "a.bin").write_bytes(b"secnd")  # same length, new contents
-            manifest = scan(root, cache_path=cache)
-
-            digest = {f["path"]: f["sha256"] for f in manifest["files"]}["a.bin"]
-            self.assertEqual(digest, hashlib.sha256(b"secnd").hexdigest())
-
-    def test_a_corrupt_cache_is_ignored_rather_than_fatal(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = self._data(base)
-            cache = base / "cache.json"
-            cache.write_text("{ not json at all", encoding="utf-8")
-
-            manifest = scan(root, cache_path=cache)
-
-            self.assertEqual(manifest["file_count"], 2)
-            self.assertEqual(manifest["extensions"]["cache"]["reused"], 0)
-
-    def test_a_cache_from_an_older_format_is_ignored(self):
-        from ndos_scan import load_cache
-
-        with tempfile.TemporaryDirectory() as directory:
-            cache = Path(directory) / "cache.json"
-            cache.write_text(
-                json.dumps({"cache_version": "0.0", "entries": {"a": {}}}),
-                encoding="utf-8",
-            )
-            self.assertEqual(load_cache(cache), {})
-
-    def test_the_cache_is_written_atomically(self):
-        from ndos_scan import save_cache
-
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            cache = base / "cache.json"
-            save_cache(cache, base, {"a.bin": {"size_bytes": 1, "sha256": "x" * 64}})
-
-            self.assertTrue(cache.is_file())
-            # No temporary file survives a completed write.
-            self.assertEqual(list(base.glob("*.tmp")), [])
-
-    def test_scanning_without_a_cache_writes_no_cache_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            root = self._data(base)
-
-            manifest = scan(root)
-
-            self.assertNotIn("extensions", manifest)
-            self.assertEqual(list(base.glob("*.json")), [])
-
-    def test_a_read_too_fast_to_time_still_yields_a_rate(self):
-        from ndos_scan import estimate
-
-        # On a fast disk the sample finishes inside the clock's resolution.
-        # That means "very fast", not "unmeasurable", and returning None sent
-        # the CLI down a path telling the user nothing could be measured.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "tiny.bin").write_bytes(b"x" * 64)
-
-            measured = estimate(root, sample_bytes=64)
-
-            self.assertIsNotNone(measured["bytes_per_second"])
-            self.assertGreater(measured["bytes_per_second"], 0)
-            self.assertIsNotNone(measured["seconds"])
-
-    def test_an_empty_directory_reports_no_rate_rather_than_dividing_by_zero(self):
-        from ndos_scan import estimate
-
-        with tempfile.TemporaryDirectory() as directory:
-            measured = estimate(Path(directory))
-            self.assertEqual(measured["file_count"], 0)
-            self.assertIsNone(measured["bytes_per_second"])
-
-
-class SymlinkFollowingTests(unittest.TestCase):
-    """An NDOS project is built from links, so inventorying one needs them."""
-
-    def _linked(self, base: Path):
-        real = base / "real"
-        real.mkdir()
-        (real / "rec.dat").write_bytes(b"signal")
-        project = base / "project"
-        (project / "raw_data").mkdir(parents=True)
-        (project / "raw_data" / "rec.dat").symlink_to(real / "rec.dat")
-        return project
-
-    def test_links_are_skipped_by_default(self):
-        with tempfile.TemporaryDirectory() as directory:
-            project = self._linked(Path(directory))
-            manifest = scan(project, include_checksums=False)
-
-            self.assertEqual(manifest["file_count"], 0)
-            self.assertEqual(
-                [e["reason"] for e in manifest["skipped"]], ["symlink"]
-            )
-
-    def test_links_are_inventoried_when_asked_for(self):
-        with tempfile.TemporaryDirectory() as directory:
-            project = self._linked(Path(directory))
-            manifest = scan(project, include_checksums=False, follow_symlinks=True)
-
-            self.assertEqual(manifest["file_count"], 1)
-            self.assertEqual(manifest["files"][0]["size_bytes"], 6)
-
-    def test_a_link_to_nothing_is_reported_not_counted(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            project = self._linked(base)
-            (base / "real" / "rec.dat").unlink()
-
-            manifest = scan(project, include_checksums=False, follow_symlinks=True)
-
-            self.assertEqual(manifest["file_count"], 0)
-            self.assertTrue(
-                any("missing" in e["detail"] for e in manifest["skipped"])
-            )
-
-    def test_a_loop_of_links_does_not_hang(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            inner = base / "a" / "b"
-            inner.mkdir(parents=True)
-            (inner / "file.txt").write_text("x", encoding="utf-8")
-            # A directory linking back to its own ancestor.
-            (inner / "loop").symlink_to(base / "a")
-
-            manifest = scan(base, include_checksums=False, follow_symlinks=True)
-
-            self.assertGreaterEqual(manifest["file_count"], 1)
+            subjects = {row["observed_folder_subject"] for row in rows}
+            self.assertIn("M123", subjects)

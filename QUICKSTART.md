@@ -1,7 +1,13 @@
 # NDOS quickstart
 
-For someone who has been handed a directory of lab data and does not know what
-is in it. About fifteen minutes, most of it waiting for a scan.
+The standard covers two situations, and so does this guide.
+
+**Starting to collect, or collecting now?** Jump to [Starting from
+scratch](#starting-from-scratch) — one command, then you are acquiring into the
+right place from the first session.
+
+**Handed a directory nobody understands any more?** Start here. About fifteen
+minutes, most of it waiting for a scan.
 
 You need Python 3.9 or newer. Nothing else — no `pip install`, no environment.
 
@@ -180,6 +186,13 @@ python3 ndos.py tags sweep ./project
 have read it. A file marked `validated` is never removed, whatever else it is
 flagged.
 
+Once you have checked some data, write the index an analysis should read
+instead of globbing a directory and hoping:
+
+```bash
+python3 ndos.py tags index ./project -o ./metadata/validated.csv
+```
+
 ---
 
 ## When you are ready to share
@@ -205,6 +218,50 @@ Your script does not change. `trace` walks a figure back through every step to
 the raw data behind it.
 
 ---
+
+## Starting from scratch
+
+If you are setting up for a new project rather than digging out an old one,
+you do not need any of the steps above. Make the layout and start collecting:
+
+```bash
+python3 ndos.py init ~/projects/my-study
+```
+
+That creates the eight N-DOS directories and a README explaining what belongs
+in each. Then, for each recording:
+
+```bash
+python3 ndos.py init ~/projects/my-study --subject M123 --date 2025-03-14
+```
+
+```
+Acquire into: ~/projects/my-study/raw_data/M123/20250314
+  Name files as M123_20250314_<type>, for example _raw.dat, _lfp.npy, _behavior.tsv
+```
+
+Point your acquisition software at that folder. The convention is applied for
+you, so `SessionID` is `20250314` — and `20250314_02` if you record that animal
+twice in a day, which you get with `--number 2`. Omit `--date` and it uses
+today.
+
+Once a session is acquired, close it:
+
+```bash
+python3 ndos.py protect ~/projects/my-study --apply
+```
+
+That makes everything under `raw_data/` read-only, so a later script cannot
+overwrite a recording. `--check` tells you later whether anything became
+writable again, and `--release` gives write back when you genuinely need it.
+
+Everything from step 4 onward works the same on a project built this way:
+export the metadata tables, fill them in as you go rather than years later, and
+query across sessions once there is more than one.
+
+The difference is only where the structure comes from. Collecting into it
+costs nothing; reconstructing it afterwards is the expensive path, which is
+what the rest of this guide is for.
 
 ## Try it on nothing first
 

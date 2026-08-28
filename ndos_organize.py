@@ -148,6 +148,8 @@ TYPE_RULES: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     ("timestamps", ("timestamp", "timestamps"), ()),
     ("raw", ("raw", "amplifier", "continuous"), (
         ".rhd", ".rhs", ".ap", ".nev", ".ns5", ".ns6",
+        # The manuscript names .nwb alongside .dat as raw electrophysiology.
+        ".nwb", ".nix",
         # A zipped session is still raw acquisition data.
         ".zip", ".tar", ".tgz", ".tar.gz", ".gz",
     )),

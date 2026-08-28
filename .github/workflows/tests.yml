@@ -51,7 +51,7 @@ jobs:
         run: |
           python ndos.py --help
           python ndos.py --version
-          python -c "import ndos, ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert"
+          python -c "import ndos, ndos_scan, ndos_init, ndos_report, ndos_table, ndos_query, ndos_prov, ndos_archive, ndos_organize, ndos_tags, ndos_convert, ndos_protect"
           python ndos_scan.py --help
           python ndos_init.py --help
           python ndos_report.py --help
@@ -62,6 +62,7 @@ jobs:
           python ndos_organize.py --help
           python ndos_tags.py --help
           python ndos_convert.py --help
+          python ndos_protect.py --help
 
       - name: End-to-end run on the synthetic fixture
         run: |
@@ -95,6 +96,14 @@ jobs:
           python ndos_organize.py apply /tmp/manifest.json -d /tmp/project2 --yes
           python ndos_tags.py list /tmp/project2
           python ndos_tags.py sweep /tmp/project2 --include-untagged
+          python ndos_tags.py index /tmp/project2
+          # Starting a project from scratch, the other half of the standard.
+          python ndos_init.py /tmp/fresh --subject M123 --date 2025-03-14
+          test -d /tmp/fresh/raw_data/M123/20250314
+          test -d /tmp/fresh/flagged_data
+          echo data > /tmp/fresh/raw_data/M123/20250314/M123_20250314_raw.dat
+          python ndos_protect.py /tmp/fresh --apply --yes
+          python ndos_protect.py /tmp/fresh --check
           # Handoff: BIDS-shaped export and an NWB conversion plan.
           python ndos_convert.py bids /tmp/project2 -d /tmp/bids --write
           test -f /tmp/bids/dataset_description.json
