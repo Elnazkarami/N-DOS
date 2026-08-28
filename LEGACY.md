@@ -1,7 +1,12 @@
 # Superseded code
 
-Two sets of scripts preceded NDOS Core. Neither is part of it, and neither is
-in this branch any more.
+**The standard is not superseded — it is the foundation.** It comes from the
+manuscript and is stated in [SPECIFICATION.md](SPECIFICATION.md), which
+everything in this repository exists to implement and check.
+
+What is superseded is the code that used to implement it. Two sets of scripts
+preceded NDOS Core. Neither is part of it, and neither is in this branch any
+more.
 
 | What | Where it is now |
 | --- | --- |

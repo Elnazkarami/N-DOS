@@ -37,7 +37,8 @@ COMMANDS: Tuple[Tuple[str, str, str], ...] = (
     ("query", "ndos_query", "Build a cohort, with the evidence behind each match"),
     ("prov", "ndos_prov", "Record what produced a result, and trace it back"),
     ("convert", "ndos_convert", "Hand off to BIDS and NWB workflows"),
-    ("init", "ndos_init", "Create an NDOS project profile"),
+    ("init", "ndos_init", "Start a project, and make a session folder"),
+    ("validate", "ndos_validate", "Check a project against the N-DOS standard"),
 )
 
 BY_NAME: Dict[str, Tuple[str, str]] = {

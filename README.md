@@ -7,8 +7,14 @@ neuroscience that begin before a recording and continue long after it: animal
 history, surgeries and injections, behavioural training, neural acquisition,
 tissue and histology, and the analyses built on top of them.
 
-This repository is **NDOS Core**, the open-source layer. It is being built
-module by module. Each module works on its own, today, with no installation.
+**The standard is in [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)** — the
+directory layout, session structure, identifiers, naming conventions and data
+flags, stated so a project can be checked against them. It comes from the
+manuscript, which explains the reasoning; the specification states the rules.
+
+The rest of this repository is the software that makes a project follow it,
+and `ndos validate` tells you whether one does. Each module works on its own,
+today, with no installation.
 
 > **Status:** the N-DOS standard defined in the manuscript — its directory
 > layout, session structure, naming conventions and data flags — is fully
@@ -361,6 +367,29 @@ Scratch is judged relative to the project root, so a project living under
 session's `derived_metadata.json` — so a sweep finds it later without anyone
 remembering which files were intermediates.
 
+### `ndos_validate.py` — does this project follow the standard?
+
+```bash
+python3 ndos.py validate ./my-study
+```
+
+```
+  This project does not yet conform.
+
+REQUIRED (2)
+  session 'March14' is not YYYYMMDD or YYYYMMDD_NN
+      at    raw_data/M123/March14
+      fix   rename it, or rebuild the layout with ndos organize
+```
+
+Requirements and recommendations are kept apart. A requirement unmet means the
+project does not conform and the command exits non-zero, so it can gate a
+hand-off or a submission. A recommendation — raw data still writable, files not
+following the naming convention, no metadata yet — is reported and never
+affects the exit code, because a lab may depart from those deliberately.
+
+Every finding says what to run to fix it.
+
 ### `ndos_protect.py` — raw data read-only after acquisition
 
 The standard asks that raw data be set read-only once acquired. A recording is
@@ -564,6 +593,8 @@ additionally validates generated manifests against the published schema.
 | `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Start a project, and make a session folder |
+| `ndos_validate.py` | Check a project against the standard |
+| `SPECIFICATION.md` | **The standard itself** |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |
 | `LEGACY.md` | Where the superseded prototypes went, and why |
