@@ -552,6 +552,34 @@ python3 ndos_init.py ~/projects/my-study
 
 ---
 
+## `ndos gui` — the same tools, in a window
+
+Not everyone in a lab works at a command line, and the person who knows what
+the data *is* often is not the person who is comfortable there.
+
+```bash
+python3 ndos.py gui        # or: ndos gui
+```
+
+That serves a local page and opens it. Pick a folder, see how long a scan will
+take, watch it run, and read the result — the same functions the commands call,
+not a second implementation that could disagree with them.
+
+It is part of the package, already built, so there is still nothing to install:
+no Node, no npm, no build step, and nothing fetched while it runs.
+
+**It is not a website and cannot be made into one.** The server binds to the
+loopback address, requires a token that only the page it opened is given,
+refuses any request that does not claim a local `Host`, and refuses any request
+carrying a foreign `Origin` — which is what stops a page you happen to have
+open in another tab from reading your disk. Nothing is exposed to the network,
+and nothing leaves the machine.
+
+The command line remains the primary interface: everything the page can do, a
+command can do, and some things only a command can do.
+
+---
+
 ## Try it without any data
 
 A synthetic messy lab project is included, containing problems chosen because
@@ -600,6 +628,10 @@ additionally validates generated manifests against the published schema.
 | `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Start a project, and make a session folder |
 | `ndos_validate.py` | Check a project against the standard |
+| `ndos_gui.py` | Serves the local interface, on this machine only |
+| `ndos_gui_static/` | That interface, already built, so no Node is needed |
+| `gui/` | Its source, for changing it — see [gui/README.md](https://github.com/Elnazkarami/N-DOS/blob/main/gui/README.md) |
+| `scripts/` | Regenerating what is derived: field definitions, the built interface |
 | `SPECIFICATION.md` | **The standard itself** |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

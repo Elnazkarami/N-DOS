@@ -285,3 +285,50 @@ class DocumentationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InterfacePackagingTests(unittest.TestCase):
+    """`pip install ndos` must be enough to run the interface.
+
+    The built interface first lived in a loose directory, which a wheel simply
+    did not carry: installing gave a working command line and an interface that
+    reported itself missing.
+    """
+
+    def test_the_interface_is_declared_as_a_package(self):
+        try:
+            import tomllib
+        except ImportError:
+            self.skipTest("tomllib needs Python 3.11+")
+
+        content = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        setuptools = content["tool"]["setuptools"]
+        self.assertIn("ndos_gui_static", setuptools.get("packages", []))
+        self.assertTrue(setuptools.get("include-package-data"))
+
+    def test_the_built_interface_is_present_and_has_an_entry_point(self):
+        static = ROOT / "ndos_gui_static"
+        self.assertTrue(static.is_dir(), "the built interface is not committed")
+        self.assertTrue((static / "index.html").is_file())
+        self.assertTrue((static / "__init__.py").is_file())
+
+    def test_the_server_finds_the_interface(self):
+        import ndos_gui
+
+        self.assertTrue(ndos_gui.STATIC_ROOT.is_dir())
+        self.assertTrue((ndos_gui.STATIC_ROOT / "index.html").is_file())
+
+    def test_the_build_inputs_are_not_committed(self):
+        import subprocess
+
+        # Having them locally is normal; committing them is not. node_modules
+        # is 390 MB, and dist is copied into ndos_gui_static anyway.
+        ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("gui/node_modules/", ignored)
+        self.assertIn("gui/dist/", ignored)
+
+        tracked = subprocess.run(
+            ["git", "ls-files", "gui/node_modules", "gui/dist"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(tracked.stdout.strip(), "", "build inputs are tracked")

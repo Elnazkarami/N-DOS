@@ -67,6 +67,18 @@ jobs:
           /tmp/check/bin/pip install dist/*.whl
           /tmp/check/bin/ndos --version
           /tmp/check/bin/ndos --help > /dev/null
+          # The first wheel built here contained no interface at all: a wheel
+          # carries only what belongs to a package, and it was a loose
+          # directory. Installing gave a working command line and an interface
+          # that reported itself missing.
+          /tmp/check/bin/python -c "
+          import pathlib, ndos_gui_static
+          root = pathlib.Path(ndos_gui_static.ROOT)
+          assert (root / 'index.html').is_file(), f'no interface in the wheel at {root}'
+          assets = list((root / 'assets').glob('*.js'))
+          assert assets, 'the interface arrived without its code'
+          print(f'interface present: {sum(1 for p in root.rglob(\"*\") if p.is_file())} files')
+          "
           # The zero-dependency promise is the reason this runs on locked-down
           # acquisition machines, and a release is where it would quietly break.
           if /tmp/check/bin/pip list --format=freeze \

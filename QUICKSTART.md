@@ -20,6 +20,12 @@ python3 ndos.py --help
 Every command below is `python3 ndos.py <something>`. If you would rather type
 `ndos <something>`, run `pip install -e .` once; it changes nothing else.
 
+**Would rather click than type?** `python3 ndos.py gui` opens a window on this
+machine that does the first few steps below — pick a folder, see how long a
+scan will take, watch it run, read the result. It is the same code underneath,
+so you can start there and switch to the commands at any point. It runs
+locally and nothing is exposed to the network.
+
 ---
 
 ## Before you start

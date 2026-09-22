@@ -42,13 +42,19 @@ test = ["jsonschema>=4"]
 Homepage = "https://github.com/Elnazkarami/N-DOS-"
 Repository = "https://github.com/Elnazkarami/N-DOS-"
 
+[tool.setuptools.package-data]
+ndos_gui_static = ["**/*"]
+
 [project.scripts]
 ndos = "ndos:main"
 
 [tool.setuptools]
+# The built interface is a package so that wheels carry it.
+packages = ["ndos_gui_static"]
+include-package-data = true
 py-modules = [
     "ndos",
     "ndos_scan", "ndos_report", "ndos_archive", "ndos_organize",
     "ndos_table", "ndos_tags", "ndos_query", "ndos_prov",
-    "ndos_convert", "ndos_init", "ndos_protect", "ndos_validate",
+    "ndos_convert", "ndos_init", "ndos_protect", "ndos_validate", "ndos_gui",
 ]
