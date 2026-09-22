@@ -4,6 +4,12 @@
 include LICENSE NOTICE CITATION.cff
 include README.md QUICKSTART.md RECIPES.md LEGACY.md SPECIFICATION.md
 recursive-include schemas *.json
+recursive-include ndos_gui_static *
+
+# The interface's source, so a source release can rebuild it.
+recursive-include gui/src *
+recursive-include gui/public *
+include gui/package.json gui/index.html gui/vite.config.ts gui/tsconfig.json
 recursive-include tests *.py
 include .github/workflows/tests.yml
 

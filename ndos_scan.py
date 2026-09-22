@@ -20,7 +20,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 
 MANIFEST_VERSION = "0.2"
@@ -192,6 +192,7 @@ def scan(
     progress: bool = False,
     cache_path: Optional[Path] = None,
     follow_symlinks: bool = False,
+    on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """Return a manifest of ``root`` without changing anything below it.
 
@@ -295,11 +296,24 @@ def scan(
                 pending = 0
                 last_flush = now
 
-            if progress and now - last_report >= PROGRESS_EVERY_SECONDS:
-                _report_progress(
-                    len(files), len(planned) or None, total_bytes,
-                    hashed_bytes, outstanding, now - started, reused,
-                )
+            if now - last_report >= PROGRESS_EVERY_SECONDS:
+                if progress:
+                    _report_progress(
+                        len(files), len(planned) or None, total_bytes,
+                        hashed_bytes, outstanding, now - started, reused,
+                    )
+                if on_progress:
+                    elapsed = now - started
+                    rate = hashed_bytes / elapsed if elapsed > 0 else 0
+                    left = outstanding - hashed_bytes
+                    on_progress({
+                        "files": len(files),
+                        "total_files": len(planned) or None,
+                        "bytes": total_bytes,
+                        "bytes_per_second": rate,
+                        "seconds_remaining": (left / rate) if rate > 0 and left > 0 else None,
+                        "reused": reused,
+                    })
                 last_report = now
     except KeyboardInterrupt:
         flush()

@@ -39,6 +39,7 @@ COMMANDS: Tuple[Tuple[str, str, str], ...] = (
     ("convert", "ndos_convert", "Hand off to BIDS and NWB workflows"),
     ("init", "ndos_init", "Start a project, and make a session folder"),
     ("validate", "ndos_validate", "Check a project against the N-DOS standard"),
+    ("gui", "ndos_gui", "Open the N-DOS interface in a browser, on this machine"),
 )
 
 BY_NAME: Dict[str, Tuple[str, str]] = {

@@ -15,3 +15,10 @@ report.md
 
 # Scratch data from the legacy Miniscope prototype; not part of NDOS Core
 test_dir/
+
+# The interface's build inputs. The built result is committed in
+# ndos_gui_static/ so that installing the package is enough to run it.
+gui/node_modules/
+gui/dist/
+gui/.output/
+gui/.wrangler/
