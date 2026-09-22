@@ -79,12 +79,19 @@ def fingerprint() -> str:
 
     A renamed file with identical contents is a different build, so the path
     goes into the hash beside the bytes.
+
+    Line endings are normalised first. Git hands these files to a Windows
+    checkout with CRLF and to every other one with LF, so hashing them as
+    they sit on disk makes the same commit fingerprint differently depending
+    on where it was cloned -- which is what this found the first time it ran
+    on Windows. Whatever the build reads, it reads the same source.
     """
     digest = hashlib.sha256()
     for path in _files():
         digest.update(path.relative_to(GUI).as_posix().encode())
         digest.update(b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        body = path.read_bytes().replace(b"\r\n", b"\n")
+        digest.update(hashlib.sha256(body).digest())
     return digest.hexdigest()
 
 
