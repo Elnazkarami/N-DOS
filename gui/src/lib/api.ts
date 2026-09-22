@@ -30,7 +30,10 @@ async function call<T>(endpoint: string, payload: Record<string, unknown> = {}):
   const token = typeof window === "undefined" ? undefined : window.__NDOS__?.token;
   if (!token) throw new NotLocalError();
 
-  const response = await fetch(`./api/${endpoint}`, {
+  // Absolute, not relative: the server mounts the API at /api, and a page
+  // opened at /local/ rather than /local would resolve a relative path to
+  // /local/api/... and get a 404 for every call it made.
+  const response = await fetch(`/api/${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-NDOS-Token": token },
     body: JSON.stringify(payload),

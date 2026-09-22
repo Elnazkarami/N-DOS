@@ -473,8 +473,13 @@ def main() -> int:
     args = parser.parse_args()
 
     httpd, url = serve(port=args.port, open_browser=not args.no_browser)
-    print(f"N-DOS is running at {url}")
-    print("This address works only on this machine. Press Ctrl-C to stop.")
+    # Flushed, because the address is the only way in: run with the output
+    # redirected and a buffered banner would not appear until the server stops.
+    print(f"N-DOS is running at {url}", flush=True)
+    print(
+        "This address works only on this machine. Press Ctrl-C to stop.",
+        flush=True,
+    )
     if not STATIC_ROOT.is_dir():
         print(
             f"\nThe built interface is not in {STATIC_ROOT}; the page will say "

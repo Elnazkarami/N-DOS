@@ -213,10 +213,6 @@ class ApiUnitTests(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class GeneratedFieldTests(unittest.TestCase):
     """The interface must not disagree with the tools about the standard.
 
@@ -263,3 +259,38 @@ class GeneratedFieldTests(unittest.TestCase):
         text = self.GENERATED.read_text(encoding="utf-8")
         self.assertIn('"mouse"', text)
         self.assertIn('"ephys"', text)
+
+
+class ShippedInterfaceTests(unittest.TestCase):
+    """The built interface in the package must be the one in gui/.
+
+    It ships built so that installing the package is the whole install. The
+    price is that it can go stale invisibly: the bundle is unreadable and its
+    filenames are hashes, so an interface a version behind looks exactly like
+    a current one.
+    """
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_the_shipped_build_matches_its_sources(self):
+        import subprocess
+
+        result = subprocess.run(
+            [sys.executable, str(self.ROOT / "scripts" / "vendor_gui.py"), "--check"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, f"{result.stdout}{result.stderr}")
+
+    def test_the_page_the_server_would_serve_exists(self):
+        import ndos_gui
+
+        index = ndos_gui.STATIC_ROOT / "index.html"
+        self.assertTrue(index.is_file(), f"no interface at {ndos_gui.STATIC_ROOT}")
+        # Nothing may be fetched from the network: a lab machine need not have one.
+        markup = index.read_text(encoding="utf-8")
+        self.assertNotIn("http://", markup)
+        self.assertNotIn("https://", markup)
+
+
+if __name__ == "__main__":
+    unittest.main()

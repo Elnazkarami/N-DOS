@@ -37,14 +37,16 @@ function normalise(field: GeneratedField, raw: string): string {
 }
 
 function toSpec(field: GeneratedField): FieldSpec {
+  // Spread rather than assign undefined: an optional property that is present
+  // and undefined is not the same as an absent one, and the checker is strict
+  // about the difference.
   return {
     key: field.key,
     label: field.key,
     hint: field.hint,
     required: field.required,
-    enumValues: field.enumValues ?? undefined,
-    pattern: field.isDate ? ISO_DATE : undefined,
-    patternHint: field.isDate ? "must be YYYY-MM-DD" : undefined,
+    ...(field.enumValues ? { enumValues: field.enumValues } : {}),
+    ...(field.isDate ? { pattern: ISO_DATE, patternHint: "must be YYYY-MM-DD" } : {}),
     normalise: (raw: string) => normalise(field, raw),
   };
 }

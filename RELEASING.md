@@ -47,8 +47,20 @@ python3 -m venv /tmp/rehearse
    interfaces may change between minor versions; say so in the notes when they
    do.
 2. Update `ndos.py`'s `VERSION` to match.
-3. Commit, merge to `main`.
-4. Draft a release on GitHub tagged `vX.Y.Z`, matching the version exactly.
+3. If anything under `gui/` changed since the last release, rebuild the
+   interface that ships with the package:
+
+   ```bash
+   python3 scripts/vendor_gui.py       # builds gui/, copies it into ndos_gui_static/
+   python3 scripts/vendor_gui.py --check
+   ```
+
+   This is the one step a test cannot do for you, because it needs Node. The
+   tests will tell you it is needed — `vendor_gui.py --check` compares the
+   shipped build against a fingerprint of `gui/` and fails when they diverge —
+   but only a rebuild fixes it. Commit the result.
+4. Commit, merge to `main`.
+5. Draft a release on GitHub tagged `vX.Y.Z`, matching the version exactly.
    Publishing it runs the workflow.
 
 The workflow refuses to publish if the tag and `pyproject.toml` disagree. That
@@ -63,7 +75,14 @@ break.
 
 ## What ships
 
-The wheel carries the modules and nothing else. The source distribution also
+The wheel carries the modules and the built interface. That interface is a
+package (`ndos_gui_static/`) rather than a loose directory for a reason: a
+wheel carries only what belongs to a package, and the first wheel built here
+contained no interface at all. Installing it gave a working command line and a
+page reporting itself missing. The publish workflow now opens the wheel,
+installs it, and refuses to publish unless the interface is inside.
+
+The source distribution also
 carries the schemas — the published contracts of the standard — along with
 `QUICKSTART.md`, `RECIPES.md`, the licence and the test suite. `legacy/` is
 excluded: those scripts are superseded and should not travel with a release.

@@ -1,5 +1,5 @@
 import { RouterProvider, createRouter } from "@tanstack/react-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -8,8 +8,17 @@ import "./styles.css";
 
 // Served from a local Python process, so there is no server rendering and no
 // data loading to hydrate: the interface asks the server for what it needs.
-const router = createRouter({ routeTree, defaultPreload: "intent" });
+//
+// The root route declares a query client in its context and is what puts the
+// provider around the tree, so it has to be handed one here. Without it the
+// provider was being given undefined, and the first component to ask for a
+// query client would have thrown.
 const queryClient = new QueryClient();
+const router = createRouter({
+  routeTree,
+  defaultPreload: "intent",
+  context: { queryClient },
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -22,8 +31,6 @@ if (!container) throw new Error("no #root element in index.html");
 
 createRoot(container).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <RouterProvider router={router} />
   </StrictMode>,
 );
