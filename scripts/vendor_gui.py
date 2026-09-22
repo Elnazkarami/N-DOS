@@ -71,7 +71,10 @@ def _files() -> list[Path]:
                 for p in path.rglob("*")
                 if p.is_file() and not (IGNORE & set(p.parts))
             )
-    return sorted(found)
+    # Sorted by the path as text, not as a Path: comparing Path objects folds
+    # case on Windows and does not anywhere else, so the same files would be
+    # hashed in a different order there and the fingerprints would disagree.
+    return sorted(found, key=lambda p: p.relative_to(GUI).as_posix())
 
 
 def fingerprint() -> str:
