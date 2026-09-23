@@ -148,6 +148,11 @@ def _path_argument(payload: Dict[str, Any], key: str = "path") -> Path:
     path = Path(raw).expanduser()
     if not path.exists():
         raise ApiError(f"no such path: {path}", 404)
+    # Everything reached through here works on a directory. Without this the
+    # failure surfaced as a 500 and the page showed the words "ValueError" to
+    # someone who had simply picked the wrong thing.
+    if not path.is_dir():
+        raise ApiError(f"that is a file, not a folder: {path}")
     return path
 
 

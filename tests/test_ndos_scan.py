@@ -12,10 +12,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ndos_init import initialize
+import ndos_scan
 from ndos_scan import MANIFEST_VERSION, scan
 
 
@@ -326,3 +328,70 @@ class FreshCollectionTests(unittest.TestCase):
             )
             subjects = {row["observed_folder_subject"] for row in rows}
             self.assertIn("M123", subjects)
+
+
+class ProgressCallbackTests(unittest.TestCase):
+    """What a caller without a terminal is told while a long scan runs.
+
+    The interface passes `progress=False`, because it has no terminal to
+    print to, and `on_progress`, because it has a page to update. Those are
+    two different questions and one flag was answering both: asking for no
+    terminal output also skipped the walk that counts the work up front, so
+    the page got a file count climbing towards no total, with no time
+    remaining -- on exactly the scans that take long enough to need them.
+    """
+
+    def _scan(self, root, **kwargs):
+        seen = []
+        ndos_scan.scan(root, on_progress=seen.append, **kwargs)
+        return seen
+
+    def _lab(self, directory, files=60):
+        root = Path(directory) / "lab"
+        root.mkdir()
+        for i in range(files):
+            (root / f"file_{i:03d}.dat").write_bytes(b"x" * 4096)
+        return root
+
+    def test_a_checksummed_scan_reports_a_total_to_a_caller_without_a_terminal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._lab(directory)
+            # Report on every file rather than every two seconds, so the test
+            # does not depend on how fast the machine running it is.
+            with mock.patch.object(ndos_scan, "PROGRESS_EVERY_SECONDS", 0.0):
+                updates = self._scan(root, include_checksums=True, progress=False)
+
+            self.assertTrue(updates, "a scan reported nothing at all")
+            totals = {u["total_files"] for u in updates}
+            self.assertNotIn(
+                None, totals,
+                "the page was given a file count with no total to count towards",
+            )
+            self.assertEqual(totals, {60})
+
+    def test_it_also_says_how_much_longer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._lab(directory)
+            with mock.patch.object(ndos_scan, "PROGRESS_EVERY_SECONDS", 0.0):
+                updates = self._scan(root, include_checksums=True, progress=False)
+
+            # The last update can legitimately have nothing left to do.
+            self.assertTrue(
+                any(u["seconds_remaining"] is not None for u in updates),
+                "no update carried a time remaining",
+            )
+
+    def test_a_scan_without_checksums_does_not_pay_for_a_second_walk(self):
+        # Nothing is read, so there is no duration to predict and no reason
+        # to walk the tree twice to find out.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._lab(directory)
+            with mock.patch.object(ndos_scan, "PROGRESS_EVERY_SECONDS", 0.0):
+                updates = self._scan(root, include_checksums=False, progress=False)
+
+            self.assertTrue(updates)
+            self.assertTrue(all(u["total_files"] is None for u in updates))
+
+
+if __name__ == "__main__":
+    unittest.main()

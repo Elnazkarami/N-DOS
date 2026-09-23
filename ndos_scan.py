@@ -219,8 +219,14 @@ def scan(
 
     # Knowing the total up front is what makes a remaining-time estimate
     # possible; walking twice is cheap next to reading every byte.
+    #
+    # `progress` asks for output on a terminal, which a caller passing
+    # on_progress does not want -- but it was also, silently, what decided
+    # whether this walk happened. So the interface got a file count that
+    # climbed with no total and no time remaining, on the long scans that
+    # need both most.
     planned: List[Tuple[Path, int]] = []
-    if include_checksums and progress:
+    if include_checksums and (progress or on_progress is not None):
         for path in _walk(root, excludes, [], follow_symlinks):
             try:
                 planned.append((path, path.stat().st_size))
