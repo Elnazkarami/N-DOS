@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type BrowseResult } from "@/lib/api";
+import { api, formatBytes, type BrowseResult } from "@/lib/api";
 
 /**
  * Choosing a folder on this machine.
@@ -10,25 +10,35 @@ import { api, type BrowseResult } from "@/lib/api";
 export function FolderPicker({
   onChoose,
   chosen,
+  suffix,
+  onChooseFile,
+  chooseLabel = "use this folder",
 }: {
   onChoose: (path: string) => void;
   chosen?: string | null;
+  /** Also offer the files ending in this, e.g. ".json". */
+  suffix?: string;
+  onChooseFile?: (path: string, name: string) => void;
+  chooseLabel?: string;
 }) {
   const [here, setHere] = useState<BrowseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const go = useCallback(async (path?: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setHere(await api.browse(path));
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : String(problem));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const go = useCallback(
+    async (path?: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        setHere(await api.browse(path, suffix));
+      } catch (problem) {
+        setError(problem instanceof Error ? problem.message : String(problem));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [suffix],
+  );
 
   useEffect(() => {
     void go();
@@ -67,7 +77,7 @@ export function FolderPicker({
               onClick={() => onChoose(here.path)}
               className="rounded-sm bg-purple px-2.5 py-0.5 font-mono text-[11px] text-cream"
             >
-              use this folder
+              {chooseLabel}
             </button>
           )}
         </div>
@@ -75,9 +85,9 @@ export function FolderPicker({
 
       <div className="max-h-64 overflow-y-auto">
         {busy && <p className="px-4 py-3 font-mono text-[11px]">reading…</p>}
-        {!busy && here?.directories.length === 0 && (
+        {!busy && here?.directories.length === 0 && (here?.files ?? []).length === 0 && (
           <p className="px-4 py-3 font-mono text-[11px] text-ink/60">
-            no folders here · {here.file_count} files
+            nothing to choose here · {here.file_count} files
           </p>
         )}
         {!busy &&
@@ -90,6 +100,23 @@ export function FolderPicker({
             >
               <span aria-hidden="true">/</span>
               <span className="truncate">{directory.name}</span>
+            </button>
+          ))}
+
+        {!busy &&
+          onChooseFile &&
+          here?.files?.map((file) => (
+            <button
+              key={file.path}
+              type="button"
+              onClick={() => onChooseFile(file.path, file.name)}
+              className="flex w-full items-center gap-2 px-4 py-1.5 text-left font-mono text-[12px] hover:bg-purple/10"
+            >
+              <span aria-hidden="true" className="text-purple">
+                ·
+              </span>
+              <span className="truncate">{file.name}</span>
+              <span className="ml-auto shrink-0 text-ink/40">{formatBytes(file.bytes)}</span>
             </button>
           ))}
       </div>

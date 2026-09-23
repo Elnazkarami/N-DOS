@@ -561,9 +561,27 @@ the data *is* often is not the person who is comfortable there.
 python3 ndos.py gui        # or: ndos gui
 ```
 
-That serves a local page and opens it. Pick a folder, see how long a scan will
-take, watch it run, and read the result — the same functions the commands call,
-not a second implementation that could disagree with them.
+That serves a local page and opens it. Four things it does, each calling the
+same functions the commands call rather than a second implementation that
+could disagree with them:
+
+| | |
+| --- | --- |
+| **This machine** | Pick a folder, see how long a scan would take, watch it run, read the result, check it against the standard |
+| **Manifest** | Open a `manifest.json` by name and read what a scan found |
+| **Query** | Build a cohort, and see all three answers — matched, excluded, and **cannot be ruled out** |
+| **Validate** | Check a project's metadata tables against each other, and enter the facts only a person knows |
+
+The query page is the one worth understanding. A session that never recorded a
+species is not a session known not to be a mouse, and a page that showed you
+only "matched" and "everything else" would let you publish a cohort that is
+quietly biased towards the animals somebody happened to write down. So the
+query runs where the rules live, and answers with all three groups, the
+constraint that blocked each session, and what filling it in would change.
+
+Nothing the page does writes to your data. Linking a project's metadata for a
+query builds the records in memory — `ndos table check --emit` writes them to
+a file, and the page needs no such file to exist.
 
 It is part of the package, already built, so there is still nothing to install:
 no Node, no npm, no build step, and nothing fetched while it runs.

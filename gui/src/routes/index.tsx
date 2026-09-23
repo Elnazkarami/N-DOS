@@ -22,13 +22,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "A browser interface for N-DOS: read a scan manifest, query sessions, and enter lab metadata. Observed, computed and guessed are never mixed.",
+          "The N-DOS interface, running on your own machine: scan a drive, query sessions, and enter lab metadata. Observed, computed and guessed are never mixed.",
       },
       { property: "og:title", content: "N-DOS — Neuroscience Data Organization System" },
       {
         property: "og:description",
         content:
-          "A BIDS-inspired standard and toolkit for organising wet-lab and animal neuroscience data, with a browser-only viewer.",
+          "A BIDS-inspired standard and toolkit for organising wet-lab and animal neuroscience data, with an interface that runs locally.",
       },
     ],
   }),
@@ -57,13 +57,19 @@ function Home() {
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link
-              to="/viewer"
+              to="/local"
               className="rounded-sm bg-ink px-4 py-2.5 font-mono text-[12px] uppercase tracking-widest text-cream"
+            >
+              Look at a folder
+            </Link>
+            <Link
+              to="/viewer"
+              className="rounded-sm border-2 border-ink px-4 py-2.5 font-mono text-[12px] uppercase tracking-widest"
             >
               Open a manifest
             </Link>
             <span className="font-mono text-[11px] text-ink/60">
-              nothing leaves this browser
+              nothing leaves this machine
             </span>
           </div>
         </div>

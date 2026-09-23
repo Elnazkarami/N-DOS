@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { FolderPicker } from "@/components/FolderPicker";
+import { api, isLocal, type CheckResult } from "@/lib/api";
 import { Shell, SectionHeading } from "@/components/Shell";
 import {
   ANIMAL_FIELDS,
@@ -50,6 +52,27 @@ function ValidatePage() {
 
   const exportable = procedures.filter((p) => !isBlank(p));
 
+  const local = isLocal();
+  const [tables, setTables] = useState<CheckResult | null>(null);
+  const [tablesError, setTablesError] = useState<string | null>(null);
+  const [checkedPath, setCheckedPath] = useState<string | null>(null);
+
+  // Checking tables that already exist is a different question from checking
+  // what is being typed: it is the one that spans all three files, so it can
+  // only be answered where the files are.
+  const checkTables = async (path: string) => {
+    setTablesError(null);
+    try {
+      const result = await api.check(path);
+      setTables(result);
+      setCheckedPath(result.directory);
+    } catch (problem) {
+      setTables(null);
+      setCheckedPath(null);
+      setTablesError(problem instanceof Error ? problem.message : String(problem));
+    }
+  };
+
   return (
     <Shell>
       <div className="px-6 py-10">
@@ -61,6 +84,35 @@ function ValidatePage() {
           absent rather than empty, so “not yet entered” is never confused with “checked and
           unknown”.
         </p>
+
+        {local && (
+          <section className="mt-8">
+            <SectionHeading dot="purple">Tables you already have</SectionHeading>
+            <p className="mb-3 max-w-2xl text-sm leading-relaxed">
+              The form below checks one value at a time. A project's tables are checked across
+              all three at once — whether a procedure names an animal that exists, whether a
+              session date falls before the surgery it refers to. Nothing is written.
+            </p>
+            <div className="max-w-2xl">
+              <FolderPicker
+                chosen={checkedPath}
+                chooseLabel="check this project"
+                onChoose={(path) => void checkTables(path)}
+              />
+            </div>
+
+            {tablesError && (
+              <div className="mt-4 max-w-2xl riso-panel px-5 py-4">
+                <p className="font-mono text-[11px] uppercase tracking-widest text-magenta">
+                  nothing to check
+                </p>
+                <p className="mt-2 text-sm">{tablesError}</p>
+              </div>
+            )}
+
+            {tables && <TableReport result={tables} />}
+          </section>
+        )}
 
         <div className="mt-8 grid gap-5 lg:grid-cols-12">
           <div className="lg:col-span-4">
@@ -244,6 +296,99 @@ function FieldPanel({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * What the real checker found in a project's tables.
+ *
+ * Completeness is shown per field rather than as one number, because "62%
+ * complete" hides which 38% is missing — and a required field nobody filled
+ * in is a different problem from an optional one.
+ */
+function TableReport({ result }: { result: CheckResult }) {
+  const fields = Object.entries(result.completeness);
+  const required = fields.filter(([, v]) => v.required);
+  const optional = fields.filter(([, v]) => !v.required);
+
+  return (
+    <div className="mt-5 max-w-3xl space-y-5">
+      <div className="riso-panel px-5 py-4">
+        <p className="font-mono text-[12px]">
+          {result.row_count} session rows · {result.complete_rows} with every required field
+        </p>
+        <p className="mt-1 font-mono text-[11px] text-ink/60">{result.directory}</p>
+      </div>
+
+      {result.problems.length > 0 ? (
+        <div className="riso-panel overflow-hidden">
+          <div className="border-b-2 border-ink/20 bg-paper/60 px-4 py-3">
+            <h3 className="font-display text-lg leading-none">
+              Problems <span className="font-mono text-[12px] text-ink/50">{result.problems.length}</span>
+            </h3>
+          </div>
+          <ul className="divide-y divide-ink/15">
+            {result.problems.slice(0, 50).map((problem, i) => (
+              <li key={i} className="px-4 py-2.5">
+                <div className="flex flex-wrap items-baseline gap-2 font-mono text-[12px]">
+                  <span
+                    className={
+                      problem.level === "error" ? "text-magenta" : "text-ink/50"
+                    }
+                  >
+                    {problem.level}
+                  </span>
+                  <span className="text-ink/40">{problem.where}</span>
+                </div>
+                <p className="mt-1 text-sm">{problem.message}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="font-mono text-[12px]">No contradictions between the tables.</p>
+      )}
+
+      <div className="riso-panel px-5 py-4">
+        <p className="riso-label mb-3">How much is filled in</p>
+        <Completeness rows={required} heading="required" />
+        <Completeness rows={optional} heading="optional" />
+      </div>
+    </div>
+  );
+}
+
+function Completeness({
+  rows,
+  heading,
+}: {
+  rows: [string, CheckResult["completeness"][string]][];
+  heading: string;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-3 first:mt-0">
+      <p className="font-mono text-[11px] uppercase tracking-widest text-ink/50">{heading}</p>
+      <ul className="mt-2 space-y-1.5">
+        {rows.map(([field, v]) => (
+          <li key={field} className="flex items-center gap-3 font-mono text-[12px]">
+            <span className="w-40 shrink-0 truncate">{field}</span>
+            <span className="h-1.5 flex-1 rounded-sm bg-ink/10">
+              <span
+                className={`block h-full rounded-sm ${
+                  v.required && v.percent === 0 ? "bg-magenta" : "bg-purple"
+                }`}
+                style={{ width: `${Math.max(v.percent, v.percent > 0 ? 2 : 0)}%` }}
+              />
+            </span>
+            <span className="w-24 shrink-0 text-right text-ink/60">
+              {v.percent.toFixed(0)}%
+              {v.explicit_unknown > 0 ? ` · ${v.explicit_unknown} unknown` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

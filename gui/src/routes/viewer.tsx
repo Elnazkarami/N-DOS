@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Shell, SectionHeading, ProvenanceTag } from "@/components/Shell";
 import { JsonDrop } from "@/components/JsonDrop";
+import { FolderPicker } from "@/components/FolderPicker";
+import { api, isLocal } from "@/lib/api";
 import {
   analyseManifest,
   formatBytes,
@@ -33,6 +35,7 @@ function Viewer() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const local = isLocal();
 
   const analysis = useMemo(() => (manifest ? analyseManifest(manifest) : null), [manifest]);
 
@@ -48,15 +51,42 @@ function Viewer() {
     }
   };
 
+  // Served by `ndos gui`, the file can simply be opened by name. Dragging a
+  // file into a page is a workaround for a page that cannot reach a disk.
+  const openByPath = async (path: string, fileName: string) => {
+    try {
+      const { document } = await api.open(path);
+      load(JSON.stringify(document), fileName);
+    } catch (problem) {
+      setManifest(null);
+      setName(null);
+      setError(problem instanceof Error ? problem.message : String(problem));
+    }
+  };
+
   return (
     <Shell>
       <div className="px-6 py-10">
         <h1 className="font-display text-4xl leading-tight tracking-tight">Manifest viewer</h1>
         <p className="mt-3 max-w-2xl leading-relaxed">
-          Run <code className="font-mono text-[13px]">python3 ndos_scan.py /path/to/data --output manifest.json</code>{" "}
-          on the machine that holds the data, then open the manifest here. The file is read inside
-          your browser and never sent anywhere.
+          A manifest is what <code className="font-mono text-[13px]">ndos scan</code> writes: every
+          file it found, and what it could tell about each one.{" "}
+          {local
+            ? "Pick one from this machine, or drop it in."
+            : "Drop one in — it is read inside your browser and never sent anywhere."}
         </p>
+
+        {local && (
+          <div className="mt-6 max-w-2xl">
+            <FolderPicker
+              suffix=".json"
+              chosen={name}
+              chooseLabel="browse for a manifest"
+              onChoose={() => undefined}
+              onChooseFile={(path, fileName) => void openByPath(path, fileName)}
+            />
+          </div>
+        )}
 
         <div className="mt-6 max-w-2xl">
           <JsonDrop
