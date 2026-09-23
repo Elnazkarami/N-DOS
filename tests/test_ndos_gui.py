@@ -18,7 +18,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ndos_gui
-from ndos_gui import ApiError, api_browse, job_state, start_job
+from ndos_gui import (
+    ApiError,
+    api_browse,
+    api_check,
+    api_link,
+    api_open,
+    api_query,
+    job_state,
+    start_job,
+)
 
 TOKEN = "token-for-tests"
 
@@ -290,6 +299,152 @@ class ShippedInterfaceTests(unittest.TestCase):
         markup = index.read_text(encoding="utf-8")
         self.assertNotIn("http://", markup)
         self.assertNotIn("https://", markup)
+
+
+class QueryTests(unittest.TestCase):
+    """The answer a cohort query is allowed to give.
+
+    A session that never recorded a species is not a session known not to be
+    a mouse. The page used to compare strings itself and had only two
+    outcomes, so it reported the second when the truth was the first -- the
+    single mistake this project exists to prevent.
+    """
+
+    #: Two sessions belonging to two animals. Species lives on the animal,
+    #: which is the join the page cannot do for itself.
+    SESSIONS = (
+        "ndos_id,observed_path,observed_file_count,observed_bytes,subject_id,session_date\n"
+        "ndos-aaaa,raw_data/M01/20250314,2,2856,M01,2025-03-14\n"
+        "ndos-bbbb,raw_data/M02/20250321,2,2856,M02,2025-03-21\n"
+    )
+    ANIMALS = "subject_id,species,strain,sex\nM01,{value}\nM02,{value}\n"
+    PROCEDURES = "procedure_id,subject_id,procedure_date,procedure_type\n"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.metadata = self.root / "metadata"
+        self.metadata.mkdir()
+        import ndos_table
+
+        (self.metadata / ndos_table.SESSIONS_FILE).write_text(
+            self.SESSIONS, encoding="utf-8"
+        )
+        self._record_species("")
+        (self.metadata / ndos_table.PROCEDURES_FILE).write_text(
+            self.PROCEDURES, encoding="utf-8"
+        )
+
+    def _record_species(self, value):
+        """Fill in the species column, the way a person filling a sheet would."""
+        import ndos_table
+
+        row = f"{value},," if value else ",,"
+        (self.metadata / ndos_table.ANIMALS_FILE).write_text(
+            self.ANIMALS.format(value=row), encoding="utf-8"
+        )
+
+    def test_a_field_nobody_filled_in_cannot_rule_a_session_out(self):
+        result = api_query({"path": str(self.root), "constraints": ["species=mouse"]})
+
+        self.assertEqual(result["counts"]["excluded"], 0, "absence was read as contradiction")
+        self.assertEqual(result["counts"]["matched"], 0)
+        self.assertEqual(
+            result["counts"]["unresolved"], result["counts"]["considered"]
+        )
+        self.assertTrue(result["diagnosis"], "no explanation of why nothing matched")
+        self.assertIn("ruled out", " ".join(result["diagnosis"]))
+
+    def test_a_recorded_value_that_disagrees_does_rule_a_session_out(self):
+        self._record_species("rat")
+        result = api_query({"path": str(self.root), "constraints": ["species=mouse"]})
+
+        self.assertEqual(result["counts"]["matched"], 0)
+        self.assertEqual(result["counts"]["unresolved"], 0)
+        self.assertEqual(
+            result["counts"]["excluded"], result["counts"]["considered"],
+            "a recorded contradiction should exclude",
+        )
+
+    def test_a_recorded_value_that_agrees_matches_and_cites_why(self):
+        self._record_species("mouse")
+        result = api_query({"path": str(self.root), "constraints": ["species=mouse"]})
+
+        self.assertEqual(
+            result["counts"]["matched"], result["counts"]["considered"]
+        )
+        first = result["matched"][0]
+        self.assertTrue(first["evidence"], "matched without citing anything")
+        self.assertEqual(first["evidence"][0]["constraint"], "species=mouse")
+
+    def test_the_three_groups_account_for_every_session(self):
+        self._record_species("mouse")
+        result = api_query({"path": str(self.root), "constraints": ["species=mouse"]})
+        counts = result["counts"]
+        self.assertEqual(
+            counts["matched"] + counts["unresolved"] + counts["excluded"],
+            counts["considered"],
+            "sessions went missing between the groups",
+        )
+
+    def test_a_query_nobody_can_parse_is_refused_in_words(self):
+        with self.assertRaises(ApiError) as caught:
+            api_query({"path": str(self.root), "constraints": ["species"]})
+        self.assertNotIn("Traceback", str(caught.exception))
+
+    def test_linking_writes_nothing(self):
+        before = sorted(p.name for p in (self.root / "metadata").iterdir())
+        api_link({"path": str(self.root)})
+        after = sorted(p.name for p in (self.root / "metadata").iterdir())
+        self.assertEqual(before, after)
+
+    def test_a_project_without_tables_says_what_to_run(self):
+        with tempfile.TemporaryDirectory() as empty:
+            with self.assertRaises(ApiError) as caught:
+                api_link({"path": empty})
+        self.assertIn("table export", str(caught.exception))
+
+    def test_the_tables_can_be_checked_where_they_are(self):
+        result = api_check({"path": str(self.root)})
+        self.assertEqual(result["row_count"], 2)
+        self.assertIn("completeness", result)
+        self.assertTrue(result["directory"].endswith("metadata"))
+
+
+class OpenTests(unittest.TestCase):
+    """Reading a file by name, rather than making someone drag it in."""
+
+    def test_a_json_document_can_be_opened_by_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps({"manifest_version": "0.2"}), encoding="utf-8")
+            result = api_open({"path": str(path)})
+            self.assertEqual(result["name"], "manifest.json")
+            self.assertEqual(result["document"]["manifest_version"], "0.2")
+
+    def test_a_file_that_is_not_json_says_so_rather_than_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "notes.json"
+            path.write_text("this is not json", encoding="utf-8")
+            with self.assertRaises(ApiError) as caught:
+                api_open({"path": str(path)})
+            self.assertIn("not valid JSON", str(caught.exception))
+
+    def test_browsing_can_offer_files_as_well_as_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "sub").mkdir()
+            (root / "manifest.json").write_text("{}", encoding="utf-8")
+            (root / "notes.txt").write_text("x", encoding="utf-8")
+
+            without = api_browse({"path": str(root)})
+            self.assertEqual(without["files"], [])
+
+            with_json = api_browse({"path": str(root), "suffix": ".json"})
+            self.assertEqual([f["name"] for f in with_json["files"]], ["manifest.json"])
+            self.assertEqual([d["name"] for d in with_json["directories"]], ["sub"])
 
 
 if __name__ == "__main__":

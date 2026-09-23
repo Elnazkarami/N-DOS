@@ -63,6 +63,19 @@ enter one. After changing a vocabulary in Python:
 python3 ../scripts/generate_gui_fields.py
 ```
 
+## What each page asks the server for
+
+| Page | Endpoints |
+| --- | --- |
+| This machine | `browse`, `estimate`, `scan` + `job`, `validate` |
+| Manifest | `browse` (with a `.json` suffix), `open` |
+| Query | `browse`, `query` — which links the project in memory first |
+| Validate | `browse`, `check` |
+
+Every one of them is read-only. `link` and `query` build a project's linked
+records in memory rather than writing the file `ndos table check --emit`
+produces, so querying a project leaves it exactly as it was.
+
 ## What it may not do
 
 It may not reach the network. A lab machine need not have one, and the data

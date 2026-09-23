@@ -43,8 +43,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
+import ndos_query
 import ndos_report
 import ndos_scan
+import ndos_table
 import ndos_validate
 
 GUI_VERSION = "0.1.0"
@@ -177,7 +179,13 @@ def api_browse(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not path.is_dir():
         raise ApiError(f"not a directory: {path}", 404)
 
+    # A suffix asks for the files of that kind as well, so the same picker can
+    # choose a manifest.json as easily as a folder.
+    suffix = payload.get("suffix")
+    wanted = str(suffix).lower() if suffix else None
+
     directories: List[Dict[str, Any]] = []
+    matches: List[Dict[str, Any]] = []
     files = 0
     try:
         for entry in sorted(path.iterdir(), key=lambda p: p.name.lower()):
@@ -185,8 +193,16 @@ def api_browse(payload: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             if entry.is_dir():
                 directories.append({"name": entry.name, "path": str(entry)})
-            else:
-                files += 1
+                continue
+            files += 1
+            if wanted and entry.name.lower().endswith(wanted):
+                try:
+                    size = entry.stat().st_size
+                except OSError:
+                    size = 0
+                matches.append(
+                    {"name": entry.name, "path": str(entry), "bytes": size}
+                )
     except PermissionError:
         raise ApiError(f"not readable: {path}", 403)
 
@@ -195,6 +211,7 @@ def api_browse(payload: Dict[str, Any]) -> Dict[str, Any]:
         "path": str(path),
         "parent": parent,
         "directories": directories,
+        "files": matches,
         "file_count": files,
         "is_project": all(
             (path / name).is_dir()
@@ -247,6 +264,123 @@ def api_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     return job_state(str(job))
 
 
+def _read_json(path: Path) -> Dict[str, Any]:
+    if not path.is_file():
+        raise ApiError(f"not a file: {path}", 404)
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ApiError(f"{path.name} is not valid JSON: {error}")
+    except OSError as error:
+        raise ApiError(f"could not read {path.name}: {error}", 403)
+    if not isinstance(loaded, dict):
+        raise ApiError(f"{path.name} does not hold an NDOS document")
+    return loaded
+
+
+def api_open(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Read a JSON document the user picked, so nothing has to be dragged.
+
+    The page could already read a file the user dropped on it. It could not
+    read one by name, which is how people actually refer to their files.
+    """
+    raw = payload.get("path")
+    if not raw or not isinstance(raw, str):
+        raise ApiError("missing path")
+    path = Path(raw).expanduser()
+    return {"path": str(path), "name": path.name, "document": _read_json(path)}
+
+
+def api_link(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Link a project's metadata tables, without writing anything.
+
+    `ndos table check --emit` writes the linked records to a file. Nothing
+    here needs that file to exist: the same function builds the records in
+    memory, so a project can be queried without first being written to.
+    """
+    path = _path_argument(payload)
+    # Either the metadata directory itself or the project holding it: a person
+    # picking a folder picks the project, and being told to pick the one inside
+    # it is the sort of thing a program should work out for itself.
+    if not (path / ndos_table.SESSIONS_FILE).is_file():
+        inner = path / "metadata"
+        if (inner / ndos_table.SESSIONS_FILE).is_file():
+            path = inner
+        else:
+            raise ApiError(
+                f"no metadata tables under {path}. "
+                f"`ndos table export` writes them from a scan."
+            )
+    return ndos_table.link_records(
+        path, include_empty=bool(payload.get("include_empty", True))
+    )
+
+
+def api_check(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Check a project's metadata tables, the way `ndos table check` does.
+
+    The entry form can only judge one value at a time: it knows `F` is a sex
+    and `mouse` is a species. It cannot know that a procedure names an animal
+    the animal table has never heard of, because that answer lives across
+    three files. This does.
+    """
+    path = _path_argument(payload)
+    if not (path / ndos_table.SESSIONS_FILE).is_file():
+        inner = path / "metadata"
+        if (inner / ndos_table.SESSIONS_FILE).is_file():
+            path = inner
+        else:
+            raise ApiError(
+                f"no metadata tables under {path}. "
+                f"`ndos table export` writes them from a scan."
+            )
+    result = ndos_table.check_metadata(path)
+    result["directory"] = str(path)
+    return result
+
+
+def api_query(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a cohort query, and answer with all three outcomes.
+
+    The page used to filter rows itself, by comparing strings. That quietly
+    turned "this session never recorded a species" into "this session is not
+    a mouse", which is the one mistake this whole tool exists to prevent. The
+    query runs here instead, against the same code the command line uses, so
+    a session that cannot be ruled out is reported as exactly that.
+    """
+    metadata = payload.get("metadata")
+    if metadata is None:
+        source = payload.get("path")
+        if not source or not isinstance(source, str):
+            raise ApiError("missing metadata or path")
+        candidate = Path(source).expanduser()
+        metadata = (
+            api_link({"path": source})
+            if candidate.is_dir()
+            else _read_json(candidate)
+        )
+    if not isinstance(metadata, dict):
+        raise ApiError("metadata must be a linked-records document")
+
+    raw = payload.get("constraints") or []
+    if not isinstance(raw, list):
+        raise ApiError("constraints must be a list of 'field=value' strings")
+
+    constraints = []
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        try:
+            constraints.append(ndos_query.parse_constraint(item))
+        except ndos_query.QueryError as error:
+            raise ApiError(str(error))
+
+    result = ndos_query.run_query(metadata, constraints)
+    # The command line prints these; the page had no way to see them.
+    result["diagnosis"] = ndos_query.diagnose(result)
+    return result
+
+
 #: What the page may ask for. Anything not here does not exist.
 ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "status": api_status,
@@ -256,6 +390,10 @@ ROUTES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "validate": api_validate,
     "scan": api_scan,
     "job": api_job,
+    "open": api_open,
+    "link": api_link,
+    "check": api_check,
+    "query": api_query,
 }
 
 

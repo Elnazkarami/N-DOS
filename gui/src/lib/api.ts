@@ -50,6 +50,8 @@ export interface BrowseResult {
   path: string;
   parent: string | null;
   directories: { name: string; path: string }[];
+  /** Only the files matching the suffix the caller asked for. */
+  files: { name: string; path: string; bytes: number }[];
   file_count: number;
   is_project: boolean;
 }
@@ -79,6 +81,56 @@ export interface ValidateResult {
   findings: Finding[];
 }
 
+/** Why one session satisfied, or failed, one constraint. */
+export interface Evidence {
+  constraint: string;
+  field?: string;
+  value?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface QueryRow {
+  ndos_id: string;
+  path: string;
+  evidence: Evidence[];
+  /** Constraints this session has no recorded answer for. */
+  missing: Evidence[];
+  failed: string[];
+}
+
+/**
+ * Three outcomes, not two.
+ *
+ * A session that never recorded a species is not a session that is known not
+ * to be a mouse. Collapsing those two into "did not match" is how a cohort
+ * comes out looking cleaner than the evidence supports, so `unresolved` is
+ * reported as its own answer and shown as its own group.
+ */
+export interface QueryResult {
+  query_version: string;
+  constraints: { as_typed: string; field: string; operator: string; value: string }[];
+  counts: { considered: number; matched: number; unresolved: number; excluded: number };
+  eliminated_by: Record<string, number>;
+  blocked_by: Record<string, number>;
+  matched: QueryRow[];
+  unresolved: QueryRow[];
+  excluded: QueryRow[];
+  diagnosis: string[];
+}
+
+/** What `ndos table check` found across a project's three tables. */
+export interface CheckResult {
+  directory: string;
+  row_count: number;
+  complete_rows: number;
+  problems: { level: string; where: string; message: string }[];
+  completeness: Record<
+    string,
+    { filled: number; explicit_unknown: number; percent: number; required: boolean }
+  >;
+}
+
 export interface Job<T> {
   id: string;
   kind: string;
@@ -97,7 +149,21 @@ export interface Job<T> {
 
 export const api = {
   status: () => call<{ home: string; spec_version: string; interface_built: boolean }>("status"),
-  browse: (path?: string) => call<BrowseResult>("browse", path ? { path } : {}),
+  browse: (path?: string, suffix?: string) =>
+    call<BrowseResult>("browse", { ...(path ? { path } : {}), ...(suffix ? { suffix } : {}) }),
+  /** Read a JSON document by name, rather than making someone drag it in. */
+  open: (path: string) =>
+    call<{ path: string; name: string; document: Record<string, unknown> }>("open", { path }),
+  /** Link a project's metadata tables in memory. Writes nothing. */
+  link: (path: string, includeEmpty = true) =>
+    call<Record<string, unknown>>("link", { path, include_empty: includeEmpty }),
+  /** Check a project's metadata tables against each other. Writes nothing. */
+  check: (path: string) => call<CheckResult>("check", { path }),
+  /** Run a cohort query with the same code the command line runs. */
+  query: (
+    source: { path: string } | { metadata: Record<string, unknown> },
+    constraints: string[],
+  ) => call<QueryResult>("query", { ...source, constraints }),
   estimate: (path: string) => call<Estimate>("estimate", { path }),
   report: (path: string, checksums = false) =>
     call<Record<string, unknown>>("report", { path, checksums }),
