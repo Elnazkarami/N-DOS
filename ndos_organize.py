@@ -146,6 +146,15 @@ TYPE_RULES: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     ("behavior", ("behavior", "behaviour"), ()),
     ("experimenter", ("experimenter", "keypress", "notes", "annotation"), ()),
     ("video", ("video", "miniscope", "camera"), (".avi", ".mp4", ".mov", ".mkv")),
+    # Functional imaging and histology are frequently the same file format off
+    # the same microscope, and a .tif says nothing about which it is. Only the
+    # extensions that name one acquisition system are matched here; everything
+    # else has to say so in its name, or it keeps a word of its own. Guessing
+    # between the two would put a wrong label on the thing everyone reads first.
+    ("imaging", ("2p", "twophoton", "two-photon", "widefield", "calcium", "gcamp", "suite2p"),
+     (".isxd", ".sbx")),
+    ("histology", ("histology", "histo", "immuno", "dapi", "stain", "confocal", "slice", "section"),
+     (".czi", ".lif", ".nd2", ".lsm", ".oib", ".oif", ".ims")),
     ("timestamps", ("timestamp", "timestamps"), ()),
     ("raw", ("raw", "amplifier", "continuous"), (
         ".rhd", ".rhs", ".ap", ".nev", ".ns5", ".ns6",

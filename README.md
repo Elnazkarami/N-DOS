@@ -668,7 +668,8 @@ surgeries, injections, implants and drugs, behavioural training, extracellular
 electrophysiology and calcium imaging, tissue collection and histology, and the
 analyses derived from them.
 
-**Not in scope:**  becoming a public archive. NDOS reads and hands off to other
+**Not in scope:** replacing BIDS for human MRI/MEG/EEG, replacing NWB as a
+container, or becoming a public archive. NDOS reads and hands off to those
 ecosystems rather than competing with them.
 
 ---

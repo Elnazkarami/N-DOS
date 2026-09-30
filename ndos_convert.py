@@ -28,7 +28,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ndos_organize
 import ndos_scan
@@ -47,6 +47,12 @@ BIDS_DATATYPE: Dict[str, str] = {
     "task": "beh",
     "experimenter": "beh",
     "timestamps": "ephys",
+    # Fixed tissue maps onto BIDS-Microscopy, which is published and stable.
+    "histology": "micr",
+    # `imaging` is deliberately absent. Functional two-photon has no settled
+    # BIDS datatype -- BEP032 is still in review -- and inventing one would put
+    # a claim in the export that no validator would accept. Those files fall
+    # through to the "no BIDS datatype maps to" warning instead, which says so.
 }
 
 #: BIDS labels admit alphanumerics only.
@@ -58,6 +64,27 @@ SESSION_ID = re.compile(r"^(\d{8})(?:_(\d{2}|\d{6}))?$")
 
 def _label(value: str) -> str:
     return LABEL.sub("", value) or "unknown"
+
+
+def _collisions(originals: Iterable[str]) -> Dict[str, List[str]]:
+    """Names that are different here but stop being different once labelled.
+
+    BIDS labels admit alphanumerics only, and NDOS SubjectIDs admit `-` and `_`
+    (ndos_init.SUBJECT). So `M-123` and `M_123` are two animals to NDOS and one
+    label to BIDS. Exporting them anyway merges two animals into one subject
+    and keeps whichever metadata arrived first -- silently, in the direction
+    that loses data rather than duplicates it.
+
+    Returns only the labels that more than one original maps onto.
+    """
+    grouped: Dict[str, List[str]] = {}
+    for original in originals:
+        grouped.setdefault(_label(original), []).append(original)
+    return {
+        label: sorted(set(names))
+        for label, names in grouped.items()
+        if len(set(names)) > 1
+    }
 
 
 def _parse_name(name: str) -> Tuple[Optional[str], Optional[str], str, str]:
@@ -218,6 +245,9 @@ def plan_bids(
             datetime.now(tz=timezone.utc).timestamp()
         ),
         "subjects": sorted(subjects),
+        "collisions": _collisions(
+            session["subject"] for session in project["sessions"]
+        ),
         "session_count": len(project["sessions"]),
         "file_count": len(actions),
         "actions": actions,
@@ -231,8 +261,31 @@ def plan_bids(
     }
 
 
+def _refuse_on_collision(plan: Dict[str, Any]) -> None:
+    """Stop before writing an export that would merge two animals into one.
+
+    This is a refusal rather than a warning because the result is
+    indistinguishable from a correct export once written: one subject
+    directory, one row in participants.tsv, and no record that a second animal
+    was ever involved.
+    """
+    collisions = plan.get("collisions") or {}
+    if not collisions:
+        return
+    lines = [
+        f"  {label}: " + ", ".join(names) for label, names in sorted(collisions.items())
+    ]
+    raise ValueError(
+        "these subjects become the same label once non-alphanumeric characters "
+        "are removed, and exporting would merge them:\n"
+        + "\n".join(lines)
+        + "\nRename them in the source so they differ by letters or digits."
+    )
+
+
 def write_bids(plan: Dict[str, Any], project_root: Path) -> Dict[str, Any]:
     """Build the BIDS-style tree from links, plus the files BIDS requires."""
+    _refuse_on_collision(plan)
     destination = Path(plan["destination"])
     destination.mkdir(parents=True, exist_ok=True)
     created: List[str] = []
