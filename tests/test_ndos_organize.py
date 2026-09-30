@@ -749,3 +749,68 @@ class DeclaredDateTests(unittest.TestCase):
 
             dates = read_declared_dates(metadata)
             self.assertEqual(dates.get("sub-01/ses-01"), "2025-03-14")
+
+
+class ImagingAndHistologyTypeTests(unittest.TestCase):
+    """Files an imaging or histology lab actually produces.
+
+    Before this, the type list was entirely electrophysiology and behaviour,
+    so a two-photon lab had no valid `<type>` for its files and the BIDS
+    export dropped them -- while the README Scope claimed both modalities.
+    """
+
+    def _type(self, name):
+        import ndos_organize
+
+        stem, extension = ndos_organize._split_extension(name)
+        return ndos_organize._data_type(name, [], extension)
+
+    def test_acquisition_formats_that_name_one_system_are_typed(self):
+        for name, expected in (
+            ("recording.isxd", "imaging"),   # Inscopix miniscope
+            ("scan_00001.sbx", "imaging"),   # Scanbox two-photon
+            ("slice3.czi", "histology"),     # Zeiss
+            ("overview.nd2", "histology"),   # Nikon
+            ("stack.lif", "histology"),      # Leica
+        ):
+            label, standard = self._type(name)
+            self.assertEqual(label, expected, name)
+            self.assertTrue(standard, f"{name} should be a standard type")
+
+    def test_the_name_decides_when_the_format_cannot(self):
+        self.assertEqual(self._type("2p_stack.tif")[0], "imaging")
+        self.assertEqual(self._type("histology_overview.tif")[0], "histology")
+
+    def test_an_ambiguous_tif_keeps_its_own_word(self):
+        """A .tif is either, and nothing in the file says which.
+
+        The specification requires that a file not be given a type that
+        misdescribes it, so guessing between the two is the one thing this
+        must not do.
+        """
+        label, standard = self._type("stack001.tif")
+        self.assertFalse(standard)
+        self.assertNotIn(label, ("imaging", "histology"))
+
+    def test_the_existing_types_did_not_move(self):
+        for name, expected in (
+            ("amplifier.dat", "raw"),
+            ("behavior_cam.avi", "video"),
+            ("miniscope_video.avi", "video"),
+            ("spike_times.npy", "spikes"),
+            ("lfp.npy", "lfp"),
+        ):
+            self.assertEqual(self._type(name)[0], expected, name)
+
+    def test_histology_reaches_bids_and_imaging_says_why_it_does_not(self):
+        import ndos_convert
+
+        self.assertEqual(ndos_convert.BIDS_DATATYPE["histology"], "micr")
+        # Functional two-photon has no settled BIDS datatype while BEP032 is
+        # in review, so those files must fall through to the warning rather
+        # than claim one.
+        self.assertNotIn("imaging", ndos_convert.BIDS_DATATYPE)
+
+
+if __name__ == "__main__":
+    unittest.main()

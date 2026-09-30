@@ -125,9 +125,11 @@ def _check_sessions(root: Path) -> List[Dict[str, Any]]:
 
     # A duplicate SessionID within one subject is a genuine failure: two
     # recordings that cannot be told apart.
-    seen: Dict[str, List[str]] = {}
+    seen: Dict[str, Dict[str, List[str]]] = {}
     for subject, session, _ in _sessions(root):
-        seen.setdefault(subject, []).append(session)
+        seen.setdefault(subject, {}).setdefault(
+            _canonical_session(session), []
+        ).append(session)
         if SLASH_DATE.search(session):
             findings.append(_requirement(
                 "ambiguous-date",
@@ -136,7 +138,32 @@ def _check_sessions(root: Path) -> List[Dict[str, Any]]:
                 "rename it to YYYYMMDD",
                 f"raw_data/{subject}/{session}",
             ))
+
+    for subject in sorted(seen):
+        for names in seen[subject].values():
+            if len(names) < 2:
+                continue
+            findings.append(_requirement(
+                "duplicate-session-id",
+                f"subject {subject} has {len(names)} sessions that name the "
+                "same session: " + ", ".join(sorted(names)),
+                "give them distinct SessionIDs, or merge them if they are one "
+                "recording written twice",
+                f"raw_data/{subject}/",
+            ))
     return findings
+
+
+def _canonical_session(name: str) -> str:
+    """The form two session names share when they mean the same session.
+
+    A literal comparison can never fire: the filesystem already forbids two
+    identical sibling names. What does happen is one recording written two
+    ways -- `2025-03-14` beside `20250314`, or `M123` beside `m123`. Those are
+    two directories here and one directory after a copy onto a case-insensitive
+    disk, which is where the data goes missing.
+    """
+    return re.sub(r"[^0-9a-z]+", "", name.casefold())
 
 
 def _check_recommendations(root: Path) -> List[Dict[str, Any]]:

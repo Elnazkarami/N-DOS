@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ndos_init
+import ndos_validate
 from ndos_validate import REQUIRED_DIRECTORIES, SPEC_VERSION, validate
 
 
@@ -186,11 +187,93 @@ class SpecificationTests(unittest.TestCase):
         spec = (
             Path(__file__).resolve().parent.parent / "SPECIFICATION.md"
         ).read_text(encoding="utf-8")
-        standard = {label for label, _, _ in ndos_organize.TYPE_RULES}
-        # timestamps is an implementation fallback, not one of the eight the
-        # manuscript names.
-        for label in standard - {"timestamps"}:
+        # No exemptions. `timestamps` was one for a while -- the code assigned
+        # it and the specification did not list it -- which is the same gap
+        # that let `imaging` and `histology` be unnameable while the Scope
+        # section claimed both.
+        for label, _, _ in ndos_organize.TYPE_RULES:
             self.assertIn(f"`{label}`", spec, f"{label} is not in the specification")
+
+    def test_every_session_type_the_vocabulary_allows_can_name_a_file(self):
+        """The Scope claims calcium imaging and histology; the types must too.
+
+        A lab could declare a `calcium imaging` session and then find no
+        `<type>` for the files in it, because the type list was entirely
+        electrophysiology and behaviour.
+        """
+        import ndos_organize
+        import ndos_table
+
+        types = {label for label, _, _ in ndos_organize.TYPE_RULES}
+        nameable = {
+            "electrophysiology": {"raw", "lfp", "spikes"},
+            "calcium imaging": {"imaging"},
+            "behaviour": {"behavior", "task", "position", "video"},
+            "histology": {"histology"},
+        }
+        for session_type, expected in nameable.items():
+            self.assertIn(session_type, ndos_table.VOCABULARIES["session_type"])
+            self.assertTrue(
+                expected & types,
+                f"a {session_type!r} session has no file type to name its data",
+            )
+
+
+class DuplicateSessionTests(unittest.TestCase):
+    """Conformance rule 3: a SessionID is unique within its subject.
+
+    The rule was stated in SPECIFICATION.md and not enforced: the checker
+    collected session names into a dict and never read it back.
+    """
+
+    def _project(self, directory, *sessions):
+        import ndos_init
+
+        root = Path(directory) / "study"
+        ndos_init.initialize(root)
+        for name in sessions:
+            session = root / "raw_data" / "M123" / name
+            session.mkdir(parents=True)
+            (session / f"M123_{name}_raw.dat").write_bytes(b"signal")
+        return root
+
+    def _codes(self, result):
+        return {f["code"] for f in result["findings"]}
+
+    def test_one_session_written_two_ways_is_a_requirement_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._project(directory, "20250314", "2025-03-14")
+            result = ndos_validate.validate(root)
+
+        self.assertIn("duplicate-session-id", self._codes(result))
+        self.assertFalse(result["conforms"])
+
+    def test_names_differing_only_by_case_collide(self):
+        # Two directories here, one directory after a copy onto a
+        # case-insensitive disk, which is where a recording goes missing.
+        self.assertEqual(
+            ndos_validate._canonical_session("Ses-01"),
+            ndos_validate._canonical_session("ses_01"),
+        )
+
+    def test_genuinely_different_sessions_are_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._project(directory, "20250314", "20250315")
+            result = ndos_validate.validate(root)
+
+        self.assertNotIn("duplicate-session-id", self._codes(result))
+
+    def test_the_finding_names_both_spellings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._project(directory, "20250314", "2025-03-14")
+            result = ndos_validate.validate(root)
+
+        message = next(
+            f["message"] for f in result["findings"]
+            if f["code"] == "duplicate-session-id"
+        )
+        self.assertIn("20250314", message)
+        self.assertIn("2025-03-14", message)
 
 
 if __name__ == "__main__":

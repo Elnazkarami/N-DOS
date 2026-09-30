@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import ndos_convert
 from ndos_convert import (
     _parse_name,
     plan_bids,
@@ -195,6 +196,49 @@ class NwbTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             plan = plan_nwb(self._project_with(Path(directory)), {})
             self.assertIn("NeuroConv", plan["note"])
+
+
+class SubjectCollisionTests(unittest.TestCase):
+    """Two animals that stop being two animals once a label is made.
+
+    BIDS labels admit alphanumerics only; NDOS SubjectIDs admit `-` and `_`.
+    So `M-123` and `M_123` are two subjects in the source and one in the
+    export -- and the merge is invisible afterwards, because the result is a
+    single subject directory with a single participants.tsv row.
+    """
+
+    def test_names_differing_only_by_separator_collide(self):
+        found = ndos_convert._collisions(["M-123", "M_123", "M124"])
+        self.assertEqual(found, {"M123": ["M-123", "M_123"]})
+
+    def test_names_that_stay_distinct_do_not(self):
+        self.assertEqual(ndos_convert._collisions(["M123", "M124"]), {})
+
+    def test_the_same_name_twice_is_not_a_collision(self):
+        # One subject with several sessions arrives repeatedly; that is normal.
+        self.assertEqual(ndos_convert._collisions(["M123", "M123"]), {})
+
+    def test_a_plan_records_the_collision(self):
+        project = {
+            "sessions": [
+                {"subject": "M-123", "session": "20250314", "files": []},
+                {"subject": "M_123", "session": "20250315", "files": []},
+            ]
+        }
+        plan = ndos_convert.plan_bids(project, Path("/tmp/dest"), {})
+        self.assertIn("M123", plan["collisions"])
+
+    def test_writing_such_a_plan_is_refused(self):
+        plan = {"collisions": {"M123": ["M-123", "M_123"]}}
+        with self.assertRaises(ValueError) as caught:
+            ndos_convert._refuse_on_collision(plan)
+        message = str(caught.exception)
+        self.assertIn("M-123", message)
+        self.assertIn("M_123", message)
+
+    def test_a_clean_plan_is_not_refused(self):
+        ndos_convert._refuse_on_collision({"collisions": {}})
+        ndos_convert._refuse_on_collision({})
 
 
 if __name__ == "__main__":

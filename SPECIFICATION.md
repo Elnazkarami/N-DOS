@@ -116,11 +116,21 @@ with `<type>` from this list where one applies:
 | `position` | Position tracking | `M123_20250314_position.tsv` |
 | `experimenter` | Experimenter input, keypresses, annotations | `M123_20250314_experimenter.tsv` |
 | `video` | Video | `M123_20250314_video.mp4` |
+| `imaging` | Functional imaging: two-photon, widefield, miniscope calcium | `M123_20250314_imaging.tif`, `.isxd`, `.sbx` |
+| `histology` | Fixed tissue and microscopy of it | `M123_20250314_histology.czi`, `.lif`, `.nd2` |
+| `timestamps` | Clock or sync pulses aligning the streams above | `M123_20250314_timestamps.npy` |
 
 Where no listed type applies, the file SHOULD keep a descriptive word of its
 own in the same position. A file MUST NOT be given a type from this list that
 misdescribes it: a wrong label is worse than an unfamiliar one, because the
 filename is what everyone reads first.
+
+`imaging` and `histology` are separate types because they answer different
+questions about the same animal — what it was doing, and what its tissue looked
+like afterwards — and are often acquired on the same microscope in the same
+file format. A `.tif` is either, and nothing in the file says which. Where the
+distinction cannot be established, the file SHOULD keep a descriptive word of
+its own rather than be assigned one of the two at random.
 
 Video SHOULD be H.264-encoded MP4 where the acquisition system allows it. This
 is a decision for whoever configures the rig; re-encoding afterwards costs
@@ -230,3 +240,15 @@ This specification is versioned separately from the software. `0.1` is a
 draft: it states current practice and may change in response to labs using it.
 A change that would make a conforming project non-conforming requires a new
 version number.
+
+`imaging`, `histology` and `timestamps` were added to §4 within `0.1`. The
+list is a SHOULD and the additions are optional, so a project that conformed
+before still conforms: the version number does not move. They were added
+because the tools recognised the file formats and the scope claimed the
+modalities, while the type list offered nothing to name them with — a project
+could hold a two-photon recording and have no conforming way to say so.
+
+Separately, `ndos validate` now reports duplicate SessionIDs, which the
+Conformance section below has always required and the checker did not test. A
+project may fail this check having passed before. The standard did not change;
+the checker caught up with it.
