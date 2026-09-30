@@ -1,26 +1,45 @@
 # NDOS: Neuroscience Data Organization System
 
-**A BIDS-inspired framework for wet-lab and animal neuroscience data.**
+**Make sense of animal neuroscience data you did not organise yourself.**
 
-NDOS applies the organisational clarity of BIDS to the parts of animal
-neuroscience that begin before a recording and continue long after it: animal
-history, surgeries and injections, behavioural training, neural acquisition,
-tissue and histology, and the analyses built on top of them.
+A drive arrives. The person who filled it has graduated. Somewhere in it are
+three years of recordings, and nobody left can say which animal is which, what
+was injected when, or which of four folders called `final` is the one the
+figures came from.
 
-**The standard is in [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)** — the
-directory layout, session structure, identifiers, naming conventions and data
-flags, stated so a project can be checked against them. It comes from the
-manuscript, which explains the reasoning; the specification states the rules.
+NDOS reads that drive without changing it, and tells you what is on it — what
+it observed, what it inferred, and what it could not determine. It reconstructs
+the experiment behind the files: animals, surgeries, sessions, acquisitions and
+the analyses built on them. Then it lets you ask scientific questions of the
+result and see the evidence behind every answer.
 
-The rest of this repository is the software that makes a project follow it,
-and `ndos validate` tells you whether one does. Each module works on its own,
-today, with no installation.
+Three things it does that a file browser cannot:
 
-> **Status:** the N-DOS standard defined in the manuscript — its directory
-> layout, session structure, naming conventions and data flags — is fully
-> implemented here, along with the automation built on top of it. Everything
-> below is working and tested against real lab storage. Interfaces are still
-> at 0.x and may change.
+- **Recovery.** Inventories heterogeneous storage, reads inside archives
+  without extracting them, and proposes a structure — showing the rule and the
+  evidence behind every guess, so you can correct it rather than trust it.
+- **Discovery.** Builds cohorts from incomplete records and returns three
+  answers, not two: matched, excluded, and **cannot be ruled out**. A session
+  whose species nobody wrote down is not a session known not to be a mouse, and
+  a tool that conflates those hands you a biased cohort without saying so.
+- **Traceability.** Records what produced a result, and traces a figure back
+  through the commands and parameters to the raw files it came from.
+
+Nothing moves or changes unless you ask. Four commands write; each shows a plan
+and waits for confirmation.
+
+**The layout** is one part of this, not the whole of it.
+[SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)
+states a directory structure, session shape, identifiers and data flags that a
+project can be checked against, and `ndos validate` reports whether one
+conforms. It is a practical convention rather than a rival to BIDS or NWB —
+NDOS hands off to both — and it is deliberately separable from everything
+above, so a lab that has already chosen a layout can still use the rest.
+
+> **Status:** 0.1, and honest about it. Everything documented below works and
+> is tested against real lab storage on Linux, macOS and Windows. The
+> specification is a draft. Interfaces may change. No external lab has
+> completed a pilot yet — [that is what we are looking for](#looking-for-pilot-testers).
 
 ## Looking for pilot testers
 

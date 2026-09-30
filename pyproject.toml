@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ndos"
 version = "0.1.0"
-description = "A BIDS-inspired framework for wet-lab and animal neuroscience data"
+description = "Recover, describe and query animal neuroscience data you did not organise yourself"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"

@@ -7,12 +7,16 @@ authors:
     given-names: Elnaz
 repository-code: "https://github.com/Elnazkarami/N-DOS"
 abstract: >-
-  A BIDS-inspired standard and reference implementation for pre-publication
-  wet-lab and animal neuroscience data. NDOS reads archives without extracting
-  them, reconstructs a standard layout derived from whatever structure already
-  exists, captures metadata through the spreadsheets labs already use, answers
-  cohort queries with the evidence behind every match, records provenance from
-  a result back to raw data, and hands off to BIDS and NWB workflows.
+  A toolkit for recovering, describing and querying pre-publication wet-lab and
+  animal neuroscience data that was not organised to any standard. NDOS
+  inventories storage without modifying it, reads inside archives without
+  extracting them, proposes a structure while labelling every inference as an
+  inference, captures metadata through the spreadsheets labs already use,
+  answers cohort queries with the evidence behind every match and an explicit
+  cannot-be-ruled-out result, records provenance from a figure back to raw
+  data, and hands off to BIDS and NWB workflows. It includes a directory
+  specification a project can be checked against, which is one component rather
+  than the whole system.
 keywords:
   - neuroscience
   - electrophysiology
