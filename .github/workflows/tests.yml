@@ -88,6 +88,10 @@ jobs:
           python ndos_search.py index /tmp/messy-lab -i /tmp/search.db
           python ndos_search.py find 'alternation' -i /tmp/search.db
           python ndos_search.py find 'CA1 AND alternation' -i /tmp/search.db
+          # Binary acquisition data is unreadable and must still be reachable
+          # by name: that is most of a real drive.
+          python ndos_search.py find 'bin' -i /tmp/search.db
+          python ndos_search.py find 'surgery' -i /tmp/search.db
           # A word nobody wrote must exit 1 rather than pretending.
           python ndos_search.py find 'optogenetics' -i /tmp/search.db && exit 1 || true
           # Provenance round trip: wrap a command, then trace its output back.

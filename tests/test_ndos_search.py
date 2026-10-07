@@ -293,5 +293,133 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("search", [name for name, _, _ in ndos.COMMANDS])
 
 
+class NameMatchTests(unittest.TestCase):
+    """Finding files by their name, whatever is inside them.
+
+    Without this, search reached the notes about an experiment and not the
+    experiment: on a realistic drive the great majority of files are .bin,
+    .avi, .tif and .dat, which no text search can open and which are the
+    actual data. Measured on the messy-lab fixture, 3% of files were
+    reachable before and 91% after -- the remainder being .DS_Store and
+    Thumbs.db, which the scanner excludes on purpose.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.lab = self.root / "lab"
+        session = self.lab / "raw_data" / "M01" / "20250314"
+        session.mkdir(parents=True)
+        # Binary acquisition data: unreadable, and the point of the exercise.
+        for name in ("M01_20250314_raw.bin", "M01_20250314_raw.meta",
+                     "M01_20250314_video.avi"):
+            (session / name).write_bytes(b"\0" * 512)
+        (self.lab / "surgery_log.xlsx").write_bytes(b"\0" * 256)
+        backup = self.lab / "backup" / "raw_data" / "M01" / "20250314"
+        backup.mkdir(parents=True)
+        (backup / "M01_20250314_raw.bin").write_bytes(b"\0" * 512)
+
+        self.index = self.root / "index.db"
+        self.summary = ndos_search.build(self.lab, self.index, quiet=True)
+
+    def test_a_file_is_findable_by_a_word_in_its_name(self):
+        """`surgery_log.xlsx` is unreadable binary; its name is still a fact."""
+        result = ndos_search.find(self.index, "surgery")
+        self.assertEqual(result["name_match_count"], 1)
+        self.assertIn(
+            "surgery_log.xlsx",
+            result["directories"][0]["examples"],
+        )
+
+    def test_binary_acquisition_data_is_reachable(self):
+        result = ndos_search.find(self.index, "bin")
+        self.assertGreaterEqual(result["name_match_count"], 2)
+
+    def test_an_extension_is_searchable(self):
+        self.assertGreaterEqual(
+            ndos_search.find(self.index, "avi")["name_match_count"], 1
+        )
+
+    def test_a_scanner_category_is_searchable(self):
+        """So "find the video files" works without knowing the extension."""
+        self.assertGreaterEqual(
+            ndos_search.find(self.index, "Imaging")["name_match_count"], 1
+        )
+
+    def test_name_matches_are_summarised_by_directory_not_listed(self):
+        """240 files under one folder should say so, not print 240 rows."""
+        result = ndos_search.find(self.index, "M01")
+        folders = {entry["directory"] for entry in result["directories"]}
+        self.assertIn("raw_data/M01/20250314", folders)
+        for entry in result["directories"]:
+            self.assertLessEqual(len(entry["examples"]), 3)
+
+    def test_a_duplicate_copy_shows_as_its_own_directory(self):
+        """Seeing backup/ beside the original is the point of the summary."""
+        folders = [
+            entry["directory"]
+            for entry in ndos_search.find(self.index, "M01")["directories"]
+        ]
+        self.assertTrue(
+            any(folder.startswith("backup/") for folder in folders), folders
+        )
+
+    def test_a_directory_carries_the_subject_and_session_it_belongs_to(self):
+        entry = next(
+            e for e in ndos_search.find(self.index, "M01")["directories"]
+            if e["directory"] == "raw_data/M01/20250314"
+        )
+        self.assertEqual(entry["subject"], "M01")
+        self.assertEqual(entry["session"], "20250314")
+
+    def test_directories_are_reported_with_forward_slashes(self):
+        """An index built on Windows must read the same as one built anywhere.
+
+        `str(Path(...).parent)` gave backslashes, which only the Windows CI
+        jobs noticed. Manifests use forward slashes on every platform and so
+        must this.
+        """
+        for entry in ndos_search.find(self.index, "M01")["directories"]:
+            self.assertNotIn("\\", entry["directory"])
+
+    def test_bigger_directories_come_first(self):
+        counts = [
+            entry["file_count"]
+            for entry in ndos_search.find(self.index, "M01")["directories"]
+        ]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_names_and_documents_are_reported_separately(self):
+        """Ranking a filename against a document would compare nothing useful."""
+        (self.lab / "notes.txt").write_text(
+            "M01 ran the task on the first day.\n", encoding="utf-8"
+        )
+        ndos_search.build(self.lab, self.index, quiet=True)
+        result = ndos_search.find(self.index, "M01")
+
+        self.assertTrue(result["directories"], "no name matches")
+        self.assertTrue(result["hits"], "no document matches")
+        self.assertTrue(all(hit["kind"] != "path" for hit in result["hits"]))
+        text = ndos_search.render_find(result)
+        self.assertIn("FILES WHOSE NAME OR PATH MATCHES", text)
+        self.assertIn("DOCUMENTS AND RECORDS MENTIONING IT", text)
+
+    def test_every_file_the_scanner_saw_is_reachable(self):
+        import ndos_scan
+
+        manifest = ndos_scan.scan(self.lab, include_checksums=False, progress=False)
+        self.assertEqual(self.summary["files_named"], manifest["file_count"])
+
+    def test_a_word_in_no_name_and_no_document_still_finds_nothing(self):
+        result = ndos_search.find(self.index, "optogenetics")
+        self.assertEqual(result["name_match_count"], 0)
+        self.assertEqual(result["hits"], [])
+        self.assertIn("Nothing matched", ndos_search.render_find(result))
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

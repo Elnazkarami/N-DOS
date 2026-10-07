@@ -486,7 +486,22 @@ ndos search index /path/to/drive          # read-only, writes an index elsewhere
 ndos search find "CA1 AND injection"
 ```
 
+Results come back in two parts, because a file whose *name* matches and a
+document that *discusses* the word are different claims:
+
 ```
+FILES WHOSE NAME OR PATH MATCHES — 14 file(s)
+
+  2025-03-14/M01/ses-01/raw/    5 file(s)
+      e.g. M01_ses01_g0_t0.imec0.ap.bin, …ap.meta, …lf.bin
+      subject M01 · session 20250314
+
+  backup/2025-03-14/M01/ses-01/raw/    4 file(s)
+      e.g. M01_ses01_g0_t0.imec0.ap.bin, …ap.meta, behaviour.csv
+      subject M01 · session 20250314
+
+DOCUMENTS AND RECORDS MENTIONING IT — 2
+
   surgery_log.xlsx  (651 B)
       subject_id procedure target construct M123 injection [CA1] AAV9-GCaMP6f …
       names M123, M124
@@ -498,10 +513,17 @@ ndos search find "CA1 AND injection"
       declared, from metadata
 ```
 
-Two things to notice. The hit in the spreadsheet reports **which animals it
-names**, which is what turns a document into a route to the recordings. And
-each result says how it is known: `observed` means the text is in a file on
-disk, `declared` means a person entered it in a metadata table.
+**Every file is findable by name**, whatever is inside it — which matters
+because most of a real drive is `.bin`, `.avi`, `.tif` and `.dat`, and that is
+the data. Name matches are summarised by directory rather than listed: a folder
+holding 240 matching files should say so, and seeing `backup/` appear beside
+the original is usually the point.
+
+Then two things to notice in the document half. The hit in the spreadsheet
+reports **which animals it names**, which is what turns a document into a route
+to the recordings. And each result says how it is known: `observed` means the
+text is in a file on disk, `declared` means a person entered it in a metadata
+table.
 
 It reads `.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv` — and `.docx` and
 `.xlsx`, which are ZIPs of XML and so readable without a dependency. **`.pdf`
