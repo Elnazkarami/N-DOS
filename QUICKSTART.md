@@ -26,6 +26,10 @@ scan will take, watch it run, read the result. It is the same code underneath,
 so you can start there and switch to the commands at any point. It runs
 locally and nothing is exposed to the network.
 
+**Looking for a word rather than a field?** `ndos search index <path>` then
+`ndos search find "CA1"` reads the notes, logs and spreadsheets on the drive —
+including `.docx` and `.xlsx` — and tells you which animals each hit names.
+
 ---
 
 ## Before you start

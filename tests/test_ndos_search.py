@@ -1,0 +1,297 @@
+"""Tests for ndos_search.
+
+The thing being tested is not "does FTS5 work" -- SQLite's tests cover that.
+It is whether a word a researcher remembers leads to the data it describes,
+and whether a hit is honest about how it is known.
+"""
+
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+import ndos_search  # noqa: E402
+import ndos_table  # noqa: E402
+
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def write_docx(path: Path, paragraphs):
+    """A real .docx: a ZIP whose word/document.xml holds the text."""
+    body = "".join(
+        f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr(
+            "word/document.xml",
+            f'<?xml version="1.0"?><w:document xmlns:w="{WORD_NS}">'
+            f"<w:body>{body}</w:body></w:document>",
+        )
+
+
+def write_xlsx(path: Path, strings):
+    """A real .xlsx: the words live in the shared-strings table."""
+    items = "".join(f"<si><t>{value}</t></si>" for value in strings)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr(
+            "xl/sharedStrings.xml",
+            f'<?xml version="1.0"?><sst xmlns="{SHEET_NS}" '
+            f'count="{len(strings)}">{items}</sst>',
+        )
+
+
+class ExtractionTests(unittest.TestCase):
+    """Reading words out of the formats a lab actually leaves lying around."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_a_word_document_is_read_without_a_dependency(self):
+        path = self.root / "notes.docx"
+        write_docx(path, ["Perfusion notes, M123.", "GCaMP6f in dorsal CA1."])
+        text = ndos_search.extract_text(path)
+        self.assertIn("CA1", text)
+        self.assertIn("M123", text)
+
+    def test_a_spreadsheet_is_read_without_a_dependency(self):
+        path = self.root / "surgery_log.xlsx"
+        write_xlsx(path, ["subject_id", "M123", "injection", "CA1"])
+        text = ndos_search.extract_text(path)
+        self.assertIn("CA1", text)
+
+    def test_plain_text_is_read(self):
+        path = self.root / "notes.txt"
+        path.write_text("Rig 2, alternation task, clean theta.\n", encoding="utf-8")
+        self.assertIn("theta", ndos_search.extract_text(path))
+
+    def test_a_binary_file_wearing_a_text_extension_is_refused(self):
+        """The synthetic fixtures do exactly this, and so do real drives."""
+        path = self.root / "data.csv"
+        path.write_bytes(b"surglog-ndos-fixture-" + b"\0" * 2048)
+        self.assertIsNone(ndos_search.extract_text(path))
+
+    def test_formats_needing_a_parser_are_left_alone(self):
+        # Reading these would mean taking a dependency, which NDOS does not do
+        # for a convenience. Saying so is better than a silent empty result.
+        for name in ("scan.pdf", "old.doc", "notes.odt"):
+            path = self.root / name
+            path.write_bytes(b"%PDF-1.4 whatever")
+            self.assertIsNone(ndos_search.extract_text(path), name)
+
+    def test_a_damaged_office_file_does_not_raise(self):
+        path = self.root / "broken.docx"
+        path.write_bytes(b"this is not a zip")
+        self.assertIsNone(ndos_search.extract_text(path))
+
+
+class SearchTests(unittest.TestCase):
+    """Indexing a drive and finding things in it."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.lab = self.root / "lab"
+        (self.lab / "histology").mkdir(parents=True)
+        (self.lab / "raw_data" / "M123" / "20250314").mkdir(parents=True)
+        self.index = self.root / "index.db"
+
+        write_docx(
+            self.lab / "histology" / "notes.docx",
+            ["Perfusion notes, M123.", "GCaMP6f expression in dorsal CA1."],
+        )
+        write_xlsx(
+            self.lab / "surgery_log.xlsx",
+            ["subject_id", "M123", "injection", "CA1", "M124", "CA3"],
+        )
+        (self.lab / "raw_data" / "M123" / "20250314" / "notes.txt").write_text(
+            "Rig 2. Animal M123 ran the alternation task.\n", encoding="utf-8"
+        )
+
+        metadata = self.lab / "metadata"
+        metadata.mkdir()
+        (metadata / ndos_table.ANIMALS_FILE).write_text(
+            "subject_id,species,strain,sex,date_of_birth,genotype,source,notes\n"
+            "M123,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,implanted\n"
+            "M124,mus musculus,C57BL/6J,M,2024-11-01,WT,Jackson,\n",
+            encoding="utf-8",
+        )
+        (metadata / ndos_table.PROCEDURES_FILE).write_text(
+            "procedure_id,subject_id,procedure_date,procedure_type,target_region,"
+            "construct_or_drug,dose,notes\n"
+            "P01,M123,2025-02-01,injection,dorsal CA1,AAV9-GCaMP6f,300nl,\n",
+            encoding="utf-8",
+        )
+        (metadata / ndos_table.SESSIONS_FILE).write_text(
+            "ndos_id,observed_path,observed_file_count,observed_bytes,subject_id,"
+            "session_date,session_type,task,qc_status,notes\n"
+            "ndos-aaa,raw_data/M123/20250314,1,64,M123,2025-03-14,"
+            "electrophysiology,alternation,pass,clean theta\n",
+            encoding="utf-8",
+        )
+
+        self.summary = ndos_search.build(self.lab, self.index, quiet=True)
+
+    def paths(self, query, limit=20):
+        return [hit["path"] for hit in ndos_search.find(self.index, query, limit)["hits"]]
+
+    def test_indexing_changes_nothing_in_the_source(self):
+        before = {
+            path: path.stat().st_mtime_ns
+            for path in sorted(self.lab.rglob("*")) if path.is_file()
+        }
+        ndos_search.build(self.lab, self.root / "second.db", quiet=True)
+        after = {
+            path: path.stat().st_mtime_ns
+            for path in sorted(self.lab.rglob("*")) if path.is_file()
+        }
+        self.assertEqual(before, after)
+        self.assertNotIn(
+            self.index.name, [p.name for p in self.lab.rglob("*")],
+            "the index was written into the directory being indexed",
+        )
+
+    def test_a_word_in_a_spreadsheet_is_findable(self):
+        self.assertIn("surgery_log.xlsx", self.paths("CA1"))
+
+    def test_a_word_in_a_word_document_is_findable(self):
+        self.assertIn("histology/notes.docx", self.paths("perfusion"))
+
+    def test_a_document_says_which_animals_it_names(self):
+        """This is the chain: a log mentioning CA1 also names the animals."""
+        hit = next(
+            h for h in ndos_search.find(self.index, "CA1")["hits"]
+            if h["path"] == "surgery_log.xlsx"
+        )
+        self.assertEqual(hit["mentions"], ["M123", "M124"])
+
+    def test_a_document_under_a_session_inherits_it(self):
+        hit = next(
+            h for h in ndos_search.find(self.index, "alternation")["hits"]
+            if h["path"].endswith("notes.txt")
+        )
+        self.assertEqual(hit["subject"], "M123")
+        self.assertEqual(hit["session"], "20250314")
+
+    def test_a_hit_records_how_it_is_known(self):
+        kinds = {
+            hit["path"]: hit["evidence"]
+            for hit in ndos_search.find(self.index, "CA1")["hits"]
+        }
+        # Read from a file on disk.
+        self.assertEqual(kinds["surgery_log.xlsx"], ndos_search.OBSERVED)
+        # Entered by a person in a table.
+        self.assertEqual(kinds[ndos_table.PROCEDURES_FILE], ndos_search.DECLARED)
+
+    def test_a_metadata_table_is_not_indexed_twice(self):
+        """Once structurally and once as plain CSV would return a row twice."""
+        paths = self.paths("CA1")
+        self.assertEqual(paths.count(ndos_table.PROCEDURES_FILE), 1)
+        self.assertNotIn(f"metadata/{ndos_table.PROCEDURES_FILE}", paths)
+
+    def test_boolean_operators_work(self):
+        both = self.paths("CA1 AND injection")
+        self.assertIn("surgery_log.xlsx", both)
+        self.assertNotIn("histology/notes.docx", both)
+
+    def test_a_quoted_phrase_works(self):
+        self.assertIn(ndos_table.PROCEDURES_FILE, self.paths('"dorsal CA1"'))
+
+    def test_punctuation_a_person_would_type_does_not_break_it(self):
+        # Bare `-` and `:` are FTS5 syntax errors; "CA1-injection" is a
+        # reasonable thing to type.
+        for query in ("CA1-injection", "AAV9-GCaMP6f", "C57BL/6J"):
+            ndos_search.find(self.index, query)  # must not raise
+
+    def test_a_suffixed_name_is_found_by_its_stem(self):
+        """GCaMP6f is one token, so an exact search for GCaMP misses it.
+
+        Lab vocabulary is full of these, so a search that found nothing
+        exactly is widened to a prefix -- and says that it did.
+        """
+        result = ndos_search.find(self.index, "GCaMP")
+        self.assertTrue(result["hits"])
+        self.assertTrue(result["widened"])
+        self.assertIn("*", result["expression"])
+
+    def test_widening_does_not_happen_when_there_is_an_exact_match(self):
+        result = ndos_search.find(self.index, "CA1")
+        self.assertFalse(result["widened"])
+        self.assertNotIn("*", result["expression"])
+
+    def test_species_is_left_out_so_it_cannot_match_everything(self):
+        """`ndos query -w species=mouse` answers this precisely instead."""
+        self.assertEqual(self.paths("musculus"), [])
+
+    def test_a_word_nobody_wrote_returns_nothing(self):
+        self.assertEqual(self.paths("optogenetics"), [])
+
+    def test_an_empty_query_is_refused_in_words(self):
+        with self.assertRaises(ValueError):
+            ndos_search.find(self.index, "   ")
+
+    def test_searching_a_missing_index_says_how_to_build_one(self):
+        with self.assertRaises(ValueError) as caught:
+            ndos_search.find(self.root / "absent.db", "CA1")
+        self.assertIn("ndos search index", str(caught.exception))
+
+    def test_the_summary_counts_what_it_read(self):
+        self.assertEqual(self.summary["metadata_rows_indexed"], 4)
+        self.assertGreaterEqual(self.summary["documents_indexed"], 3)
+        self.assertEqual(self.summary["known_subjects"], 2)
+
+    def test_rebuilding_replaces_rather_than_doubles(self):
+        again = ndos_search.build(self.lab, self.index, quiet=True)
+        self.assertEqual(
+            again["documents_indexed"], self.summary["documents_indexed"]
+        )
+        self.assertEqual(self.paths("CA1").count("surgery_log.xlsx"), 1)
+
+    def test_results_are_ranked_not_merely_listed(self):
+        hits = ndos_search.find(self.index, "CA1")["hits"]
+        scores = [hit["score"] for hit in hits]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_the_output_refuses_to_be_mistaken_for_a_cohort(self):
+        """Search ranks; it does not decide. The rendering has to say so."""
+        text = ndos_search.render_find(ndos_search.find(self.index, "CA1"))
+        self.assertIn("not a cohort", text)
+        self.assertIn("ndos query", text)
+
+    def test_indexing_something_that_is_not_a_directory_is_refused(self):
+        with self.assertRaises(ValueError):
+            ndos_search.build(
+                self.lab / "surgery_log.xlsx", self.root / "x.db", quiet=True
+            )
+
+
+class CommandLineTests(unittest.TestCase):
+    def test_help_works(self):
+        import subprocess
+
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "ndos_search.py"), "--help"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("index", result.stdout)
+        self.assertIn("find", result.stdout)
+
+    def test_the_dispatcher_knows_about_it(self):
+        import ndos
+
+        self.assertIn("search", [name for name, _, _ in ndos.COMMANDS])
+
+
+if __name__ == "__main__":
+    unittest.main()

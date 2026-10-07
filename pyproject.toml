@@ -55,6 +55,7 @@ include-package-data = true
 py-modules = [
     "ndos",
     "ndos_scan", "ndos_report", "ndos_archive", "ndos_organize",
-    "ndos_table", "ndos_tags", "ndos_query", "ndos_prov",
+    "ndos_table", "ndos_tags", "ndos_query",
+  "ndos_search", "ndos_prov",
     "ndos_convert", "ndos_init", "ndos_protect", "ndos_validate", "ndos_gui",
 ]

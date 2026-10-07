@@ -35,6 +35,7 @@ COMMANDS: Tuple[Tuple[str, str, str], ...] = (
     ("tags", "ndos_tags", "Flag data validated, temporary, or safe to delete"),
     ("protect", "ndos_protect", "Make raw data read-only after acquisition"),
     ("query", "ndos_query", "Build a cohort, with the evidence behind each match"),
+    ("search", "ndos_search", "Find a word in the notes, logs and tables on a drive"),
     ("prov", "ndos_prov", "Record what produced a result, and trace it back"),
     ("convert", "ndos_convert", "Hand off to BIDS and NWB workflows"),
     ("init", "ndos_init", "Start a project, and make a session folder"),
