@@ -374,6 +374,16 @@ class NameMatchTests(unittest.TestCase):
         self.assertEqual(entry["subject"], "M01")
         self.assertEqual(entry["session"], "20250314")
 
+    def test_directories_are_reported_with_forward_slashes(self):
+        """An index built on Windows must read the same as one built anywhere.
+
+        `str(Path(...).parent)` gave backslashes, which only the Windows CI
+        jobs noticed. Manifests use forward slashes on every platform and so
+        must this.
+        """
+        for entry in ndos_search.find(self.index, "M01")["directories"]:
+            self.assertNotIn("\\", entry["directory"])
+
     def test_bigger_directories_come_first(self):
         counts = [
             entry["file_count"]

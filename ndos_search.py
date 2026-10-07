@@ -526,7 +526,11 @@ def _by_directory(rows: Sequence[sqlite3.Row]) -> List[Dict[str, Any]]:
     """Name matches, collapsed to the directories holding them."""
     folders: Dict[str, Dict[str, Any]] = {}
     for row in rows:
-        parent = str(Path(row["path"]).parent)
+        # as_posix(), not str(): manifests record paths with forward slashes on
+        # every platform, and an index built on Windows should read the same as
+        # one built anywhere else. str() here produced backslashes and the
+        # Windows CI jobs caught it.
+        parent = Path(row["path"]).parent.as_posix()
         if parent == ".":
             parent = "(root)"
         entry = folders.setdefault(
