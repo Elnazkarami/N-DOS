@@ -13,11 +13,15 @@ the experiment behind the files: animals, surgeries, sessions, acquisitions and
 the analyses built on them. Then it lets you ask scientific questions of the
 result and see the evidence behind every answer.
 
-Three things it does that a file browser cannot:
+Four things it does that a file browser cannot:
 
 - **Recovery.** Inventories heterogeneous storage, reads inside archives
   without extracting them, and proposes a structure — showing the rule and the
   evidence behind every guess, so you can correct it rather than trust it.
+- **Search.** Finds the word you remember — `CA1`, `GCaMP`, a construct name —
+  across filenames, lab notes, protocol files and spreadsheets, including
+  `.docx` and `.xlsx`. A hit in a surgery log reports which animals it names,
+  which is what turns a document into a route to the recordings.
 - **Discovery.** Builds cohorts from incomplete records and returns three
   answers, not two: matched, excluded, and **cannot be ruled out**. A session
   whose species nobody wrote down is not a session known not to be a mouse, and
@@ -108,6 +112,8 @@ Starting from a directory nobody understands:
 ```bash
 python3 ndos.py report   /path/to/chaos                     # what is in here?
 python3 ndos.py archive  inspect /path/to/chaos -c arch.json    # what is in the zips?
+python3 ndos.py search   index /path/to/chaos -i search.db  # make it searchable
+python3 ndos.py search   find "CA1" -i search.db            # where is that word?
 python3 ndos.py organize apply /path/to/chaos -d ./project  # build the N-DOS layout
 python3 ndos.py table    export ./project -d ./metadata     # fill in what only you know
 python3 ndos.py table    check  ./metadata --emit linked.json
