@@ -419,6 +419,132 @@ class NameMatchTests(unittest.TestCase):
         self.assertIn("Nothing matched", ndos_search.render_find(result))
 
 
+class ChainTests(unittest.TestCase):
+    """Word to document to animal to recordings.
+
+    Search telling you a surgery log names M123 leaves you looking M123 up by
+    hand. The join already exists -- sessions.csv carries the subject and the
+    observed path -- it just was not being followed.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.lab = self.root / "lab"
+        (self.lab / "histology").mkdir(parents=True)
+        write_xlsx(
+            self.lab / "surgery_log.xlsx",
+            ["subject_id", "M123", "injection", "CA1", "M124", "CA3"],
+        )
+
+        metadata = self.lab / "metadata"
+        metadata.mkdir()
+        (metadata / ndos_table.ANIMALS_FILE).write_text(
+            "subject_id,species,strain,sex,date_of_birth,genotype,source,notes\n"
+            "M123,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,\n"
+            "M124,mus musculus,C57BL/6J,M,2024-11-01,WT,Jackson,\n",
+            encoding="utf-8",
+        )
+        # M123 has two sessions. M124 is named in the log and has none, which
+        # is the gap between what the notes say and what is on the drive.
+        (metadata / ndos_table.SESSIONS_FILE).write_text(
+            "ndos_id,observed_path,observed_file_count,observed_bytes,subject_id,"
+            "session_date,session_type,task,qc_status,notes\n"
+            "ndos-a,raw_data/M123/20250314,12,640,M123,2025-03-14,"
+            "electrophysiology,alternation,pass,\n"
+            "ndos-b,raw_data/M123/20250321,1,64,M123,2025-03-21,"
+            "electrophysiology,alternation,fail,\n",
+            encoding="utf-8",
+        )
+        self.summary = ndos_search.build(self.lab, self.root / "i.db", quiet=True)
+        self.index = self.root / "i.db"
+
+    def hit(self, query, path):
+        return next(
+            h for h in ndos_search.find(self.index, query)["hits"]
+            if h["path"] == path
+        )
+
+    def test_a_document_leads_to_the_recordings_of_the_animal_it_names(self):
+        animals = {
+            a["subject"]: a
+            for a in self.hit("CA1", "surgery_log.xlsx")["recordings"]
+        }
+        self.assertEqual(animals["M123"]["session_count"], 2)
+        self.assertEqual(
+            [s["path"] for s in animals["M123"]["sessions"]],
+            ["raw_data/M123/20250314", "raw_data/M123/20250321"],
+        )
+
+    def test_a_session_carries_what_is_known_about_it(self):
+        session = self.hit("CA1", "surgery_log.xlsx")["recordings"][0]["sessions"][0]
+        self.assertEqual(session["date"], "2025-03-14")
+        self.assertEqual(session["file_count"], "12")
+        self.assertEqual(session["session_type"], "electrophysiology")
+        self.assertEqual(session["qc_status"], "pass")
+
+    def test_an_animal_named_with_no_data_is_reported_rather_than_dropped(self):
+        """The log says M124 was injected and the drive holds nothing for it."""
+        animals = {
+            a["subject"]: a
+            for a in self.hit("CA1", "surgery_log.xlsx")["recordings"]
+        }
+        self.assertIn("M124", animals)
+        self.assertEqual(animals["M124"]["session_count"], 0)
+
+        text = ndos_search.render_find(ndos_search.find(self.index, "CA1"))
+        self.assertIn("M124 has no sessions recorded", text)
+
+    def test_the_rendering_shows_the_paths(self):
+        text = ndos_search.render_find(ndos_search.find(self.index, "CA1"))
+        self.assertIn("M123 has 2 sessions", text)
+        self.assertIn("raw_data/M123/20250314", text)
+
+    def test_one_file_is_not_one_files(self):
+        text = ndos_search.render_find(ndos_search.find(self.index, "CA1"))
+        self.assertIn("1 file,", text)
+        self.assertNotIn("1 files", text)
+
+    def test_the_map_is_stored_in_the_index_not_read_at_search_time(self):
+        """So a moved or deleted metadata folder does not break search."""
+        import shutil
+
+        shutil.rmtree(self.lab / "metadata")
+        animals = {
+            a["subject"]: a
+            for a in self.hit("CA1", "surgery_log.xlsx")["recordings"]
+        }
+        self.assertEqual(animals["M123"]["session_count"], 2)
+
+    def test_the_summary_counts_the_sessions_it_linked(self):
+        self.assertEqual(self.summary["sessions_linked"], 2)
+
+    def test_only_a_few_sessions_are_listed_per_animal(self):
+        """Forty animals with twenty sessions each is not a useful printout."""
+        self.assertLessEqual(
+            ndos_search.RECORDINGS_PER_SUBJECT, 5
+        )
+        animal = self.hit("CA1", "surgery_log.xlsx")["recordings"][0]
+        self.assertLessEqual(
+            len(animal["sessions"]), ndos_search.RECORDINGS_PER_SUBJECT
+        )
+
+    def test_a_drive_with_no_metadata_still_searches(self):
+        bare = self.root / "bare"
+        (bare / "histology").mkdir(parents=True)
+        (bare / "histology" / "notes.txt").write_text(
+            "CA1 overview scan.\n", encoding="utf-8"
+        )
+        index = self.root / "bare.db"
+        summary = ndos_search.build(bare, index, quiet=True)
+        self.assertEqual(summary["sessions_linked"], 0)
+        hits = ndos_search.find(index, "CA1")["hits"]
+        self.assertTrue(hits)
+        self.assertEqual(hits[0]["recordings"], [])
+
+
 
 
 if __name__ == "__main__":

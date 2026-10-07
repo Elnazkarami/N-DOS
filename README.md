@@ -525,11 +525,27 @@ the data. Name matches are summarised by directory rather than listed: a folder
 holding 240 matching files should say so, and seeing `backup/` appear beside
 the original is usually the point.
 
-Then two things to notice in the document half. The hit in the spreadsheet
-reports **which animals it names**, which is what turns a document into a route
-to the recordings. And each result says how it is known: `observed` means the
-text is in a file on disk, `declared` means a person entered it in a metadata
-table.
+Then the document half follows the chain the rest of the way. A hit reports
+which animals the text names, and then where each of those animals' recordings
+actually are:
+
+```
+  surgery_log.xlsx  (651 B)
+      subject_id procedure target construct M123 injection [CA1] AAV9-GCaMP6f M124 injection CA3 …
+      names M123, M124
+      observed, from document
+      → M123 has 2 sessions:
+          raw_data/M123/20250314 (2025-03-14, 12 files, electrophysiology, qc pass)
+          raw_data/M123/20250321 (2025-03-21, 1 file, electrophysiology, qc fail)
+      → M124 has no sessions recorded
+```
+
+That last line is often the one that matters: the log says M124 was injected,
+and nothing on the drive is filed under it. NDOS already links animals to
+procedures to sessions, so the join existed — this follows it.
+
+Each result also says how it is known: `observed` means the text is in a file
+on disk, `declared` means a person entered it in a metadata table.
 
 It reads `.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv` — and `.docx` and
 `.xlsx`, which are ZIPs of XML and so readable without a dependency. **`.pdf`
