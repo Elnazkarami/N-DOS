@@ -472,6 +472,54 @@ Cohorts are frozen with the full query plan against
 what was excluded and what could not be decided, so a selection can be re-run,
 audited, or disputed later.
 
+### `ndos_search.py` — find the word you remember
+
+`ndos query` needs you to know which field holds the answer. On an inherited
+drive you often do not. What you remember is a word — `CA1`, `GCaMP`, the name
+of a construct — and the thing that knows where it applies is a surgery log in
+a spreadsheet nobody has opened in three years.
+
+NDOS already counted that spreadsheet. This reads it.
+
+```bash
+ndos search index /path/to/drive          # read-only, writes an index elsewhere
+ndos search find "CA1 AND injection"
+```
+
+```
+  surgery_log.xlsx  (651 B)
+      subject_id procedure target construct M123 injection [CA1] AAV9-GCaMP6f …
+      names M123, M124
+      observed, from document
+
+  procedures.csv  (P01)
+      procedure_id P01 subject_id M123 procedure_type injection target_region dorsal [CA1] …
+      subject M123
+      declared, from metadata
+```
+
+Two things to notice. The hit in the spreadsheet reports **which animals it
+names**, which is what turns a document into a route to the recordings. And
+each result says how it is known: `observed` means the text is in a file on
+disk, `declared` means a person entered it in a metadata table.
+
+It reads `.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv` — and `.docx` and
+`.xlsx`, which are ZIPs of XML and so readable without a dependency. **`.pdf`
+is not read**, because that would mean bundling a parser, and the output says so
+rather than returning a quiet empty result.
+
+`AND`, `OR`, `NOT`, `"quoted phrases"` and `prefix*` all work. A search that
+finds nothing exactly is retried as a prefix — lab vocabulary is full of
+suffixed names like `GCaMP6f`, which is one token to a search engine — and it
+tells you when it did that.
+
+**Search ranks; it does not decide.** A document mentioning CA1 does not
+establish that a session targeted it. To select sessions on recorded evidence —
+and to see which ones *cannot be ruled out* — use `ndos query`. The output says
+this too, at the bottom of every result set.
+
+---
+
 ### Declaring which data suits which analysis
 
 ```bash
@@ -661,6 +709,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_tags.py` | Validation flags, cleanup, validated-file index |
 | `ndos_protect.py` | Make raw data read-only after acquisition |
 | `ndos_query.py` | Cohort queries with evidence citation |
+| `ndos_search.py` | Full-text search over notes, logs and metadata |
 | `ndos_prov.py` | Run provenance and lineage tracing |
 | `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Start a project, and make a session folder |
