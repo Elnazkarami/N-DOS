@@ -13,11 +13,15 @@ the experiment behind the files: animals, surgeries, sessions, acquisitions and
 the analyses built on them. Then it lets you ask scientific questions of the
 result and see the evidence behind every answer.
 
-Three things it does that a file browser cannot:
+Four things it does that a file browser cannot:
 
 - **Recovery.** Inventories heterogeneous storage, reads inside archives
   without extracting them, and proposes a structure — showing the rule and the
   evidence behind every guess, so you can correct it rather than trust it.
+- **Search.** Finds the word you remember — `CA1`, `GCaMP`, a construct name —
+  across filenames, lab notes, protocol files and spreadsheets, including
+  `.docx` and `.xlsx`. A hit in a surgery log reports which animals it names,
+  which is what turns a document into a route to the recordings.
 - **Discovery.** Builds cohorts from incomplete records and returns three
   answers, not two: matched, excluded, and **cannot be ruled out**. A session
   whose species nobody wrote down is not a session known not to be a mouse, and
@@ -108,6 +112,8 @@ Starting from a directory nobody understands:
 ```bash
 python3 ndos.py report   /path/to/chaos                     # what is in here?
 python3 ndos.py archive  inspect /path/to/chaos -c arch.json    # what is in the zips?
+python3 ndos.py search   index /path/to/chaos -i search.db  # make it searchable
+python3 ndos.py search   find "CA1" -i search.db            # where is that word?
 python3 ndos.py organize apply /path/to/chaos -d ./project  # build the N-DOS layout
 python3 ndos.py table    export ./project -d ./metadata     # fill in what only you know
 python3 ndos.py table    check  ./metadata --emit linked.json
@@ -519,11 +525,27 @@ the data. Name matches are summarised by directory rather than listed: a folder
 holding 240 matching files should say so, and seeing `backup/` appear beside
 the original is usually the point.
 
-Then two things to notice in the document half. The hit in the spreadsheet
-reports **which animals it names**, which is what turns a document into a route
-to the recordings. And each result says how it is known: `observed` means the
-text is in a file on disk, `declared` means a person entered it in a metadata
-table.
+Then the document half follows the chain the rest of the way. A hit reports
+which animals the text names, and then where each of those animals' recordings
+actually are:
+
+```
+  surgery_log.xlsx  (651 B)
+      subject_id procedure target construct M123 injection [CA1] AAV9-GCaMP6f M124 injection CA3 …
+      names M123, M124
+      observed, from document
+      → M123 has 2 sessions:
+          raw_data/M123/20250314 (2025-03-14, 12 files, electrophysiology, qc pass)
+          raw_data/M123/20250321 (2025-03-21, 1 file, electrophysiology, qc fail)
+      → M124 has no sessions recorded
+```
+
+That last line is often the one that matters: the log says M124 was injected,
+and nothing on the drive is filed under it. NDOS already links animals to
+procedures to sessions, so the join existed — this follows it.
+
+Each result also says how it is known: `observed` means the text is in a file
+on disk, `declared` means a person entered it in a metadata table.
 
 It reads `.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv` — and `.docx` and
 `.xlsx`, which are ZIPs of XML and so readable without a dependency. **`.pdf`

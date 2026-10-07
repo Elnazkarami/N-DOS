@@ -221,6 +221,19 @@ def _create(db: sqlite3.Connection) -> None:
             session  TEXT,            -- the session, where it is known
             mentions TEXT             -- animals this text names, comma separated
         );
+        -- What each animal's recordings are, copied in at index time so a
+        -- search does not depend on the metadata tables still being where
+        -- they were. This is what lets a hit naming M123 answer the question
+        -- a person actually has: where is M123's data.
+        CREATE TABLE recordings (
+            subject      TEXT NOT NULL,
+            path         TEXT,
+            session_date TEXT,
+            file_count   TEXT,
+            session_type TEXT,
+            qc_status    TEXT
+        );
+        CREATE INDEX recordings_subject ON recordings (subject);
         -- Contentless would save space but lose snippet(), and a hit without
         -- the words that matched is not a citation.
         CREATE VIRTUAL TABLE search USING fts5(body);
@@ -386,6 +399,42 @@ def _index_documents(
 PATH = "path"
 
 
+def _index_recordings(db: sqlite3.Connection, metadata_dir: Path) -> int:
+    """Copy the animal-to-sessions map into the index.
+
+    `sessions.csv` already carries the subject and the observed path for every
+    session, so the join exists; it simply was not being followed. Following it
+    is what turns "this log names M123" into "and here is M123's data".
+    """
+    path = metadata_dir / ndos_table.SESSIONS_FILE
+    if not path.is_file():
+        return 0
+    try:
+        rows = ndos_table.read_table(path)
+    except OSError:
+        return 0
+
+    added = 0
+    for row in rows:
+        subject = (row.get("subject_id") or "").strip()
+        if not subject:
+            continue
+        db.execute(
+            "INSERT INTO recordings (subject, path, session_date, file_count,"
+            " session_type, qc_status) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                subject,
+                (row.get("observed_path") or "").strip(),
+                (row.get("session_date") or "").strip(),
+                (row.get("observed_file_count") or "").strip(),
+                (row.get("session_type") or "").strip(),
+                (row.get("qc_status") or "").strip(),
+            ),
+        )
+        added += 1
+    return added
+
+
 def _index_paths(
     db: sqlite3.Connection,
     files: Sequence[Dict[str, Any]],
@@ -476,6 +525,7 @@ def build(
             db, source, manifest.get("files", []), subjects, exclude, on_progress
         )
         named = _index_paths(db, manifest.get("files", []))
+        recordings = _index_recordings(db, metadata_dir) if metadata_dir else 0
 
         summary = {
             "index_version": INDEX_VERSION,
@@ -488,6 +538,7 @@ def build(
             "documents_unreadable": unreadable,
             "metadata_rows_indexed": declared,
             "files_named": named,
+            "sessions_linked": recordings,
             "known_subjects": len(subjects),
         }
         for key, value in summary.items():
@@ -513,6 +564,47 @@ def _escape_query(text: str) -> str:
     if not words:
         raise ValueError("nothing to search for")
     return " ".join(f'"{word}"' if not word.endswith("*") else word for word in words)
+
+
+#: Sessions listed per animal before the rest become a count. A document
+#: naming forty animals should not print four hundred lines; the useful answer
+#: is which animals, how much data each has, and a few paths to start from.
+RECORDINGS_PER_SUBJECT = 3
+
+
+def _files_phrase(count: str) -> str:
+    """"1 file", not "1 files"."""
+    if not count:
+        return ""
+    return f"{count} file" + ("" if count.strip() == "1" else "s")
+
+
+def _recordings_for(
+    db: sqlite3.Connection, subjects: Sequence[str]
+) -> List[Dict[str, Any]]:
+    """Where each named animal's recordings are."""
+    found = []
+    for subject in subjects:
+        rows = db.execute(
+            "SELECT path, session_date, file_count, session_type, qc_status"
+            " FROM recordings WHERE subject = ? ORDER BY session_date, path",
+            (subject,),
+        ).fetchall()
+        found.append({
+            "subject": subject,
+            "session_count": len(rows),
+            "sessions": [
+                {
+                    "path": row["path"],
+                    "date": row["session_date"],
+                    "file_count": row["file_count"],
+                    "session_type": row["session_type"],
+                    "qc_status": row["qc_status"],
+                }
+                for row in rows[:RECORDINGS_PER_SUBJECT]
+            ],
+        })
+    return found
 
 
 #: How many name matches to read before summarising. A search for a common
@@ -626,20 +718,24 @@ def find(
             row["key"]: row["value"]
             for row in db.execute("SELECT key, value FROM meta")
         }
-        hits = [
-            {
+        hits = []
+        for row in rows:
+            mentions = [m for m in (row["mentions"] or "").split(",") if m]
+            # The animal a document names, and the one its location implies,
+            # are the same question asked two ways.
+            named = list(dict.fromkeys(mentions + ([row["subject"]] if row["subject"] else [])))
+            hits.append({
                 "kind": row["kind"],
                 "evidence": row["evidence"],
                 "path": row["path"],
                 "locator": row["locator"],
                 "subject": row["subject"],
                 "session": row["session"],
-                "mentions": [m for m in (row["mentions"] or "").split(",") if m],
+                "mentions": mentions,
                 "snippet": " ".join(row["snippet"].split()),
                 "score": round(-row["score"], 3),
-            }
-            for row in rows
-        ]
+                "recordings": _recordings_for(db, named),
+            })
         return {
             "index_version": meta.get("index_version", INDEX_VERSION),
             "source_root": meta.get("source_root", ""),
@@ -663,6 +759,7 @@ def render_build(summary: Dict[str, Any]) -> str:
         ("Documents read", summary["documents_indexed"]),
         ("Metadata rows", summary["metadata_rows_indexed"]),
         ("Known animals", summary["known_subjects"]),
+        ("Sessions linked to them", summary["sessions_linked"]),
     ]
     width = max(len(label) for label, _ in rows)
     lines = [
@@ -764,6 +861,38 @@ def render_find(result: Dict[str, Any]) -> str:
             if trail:
                 lines.append("      " + " · ".join(trail))
             lines.append(f"      {hit['evidence']}, from {hit['kind']}")
+
+            # The chain completing: the word led to this document, the document
+            # names an animal, and this is that animal's data.
+            for animal in hit["recordings"]:
+                if not animal["session_count"]:
+                    # Worth saying out loud: the notes name this animal and
+                    # the drive has nothing filed under it.
+                    lines.append(
+                        f"      → {animal['subject']} has no sessions recorded"
+                    )
+                    continue
+                plural = "" if animal["session_count"] == 1 else "s"
+                lines.append(
+                    f"      → {animal['subject']} has "
+                    f"{animal['session_count']} session{plural}:"
+                )
+                for session in animal["sessions"]:
+                    detail = [session["path"] or "(path not recorded)"]
+                    extra = [
+                        value for value in (
+                            session["date"],
+                            _files_phrase(session["file_count"]),
+                            session["session_type"],
+                            f"qc {session['qc_status']}" if session["qc_status"] else "",
+                        ) if value
+                    ]
+                    if extra:
+                        detail.append("(" + ", ".join(extra) + ")")
+                    lines.append("          " + " ".join(detail))
+                remaining = animal["session_count"] - len(animal["sessions"])
+                if remaining > 0:
+                    lines.append(f"          … and {remaining} more")
 
     lines += [
         "",
