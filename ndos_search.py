@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ndos_organize
+import ndos_report
 import ndos_scan
 import ndos_table
 
@@ -382,6 +383,48 @@ def _index_documents(
     return indexed, skipped
 
 
+PATH = "path"
+
+
+def _index_paths(
+    db: sqlite3.Connection,
+    files: Sequence[Dict[str, Any]],
+) -> int:
+    """Make every file findable by its name, whatever is inside it.
+
+    Without this, search reaches the notes about an experiment and not the
+    experiment: on a realistic drive the great majority of files are .bin,
+    .avi, .tif, .dat -- nothing a text search can open, and the actual data.
+    Searching `surgery` also found nothing while `surgery_log.xlsx` sat in the
+    root, because nothing indexed the name.
+
+    FTS5's default tokenizer splits on every non-alphanumeric character, so
+    inserting the path as-is makes each of `raw_data`, `M123`, `20250314`,
+    `raw` and `dat` a separate searchable word for free. The extension and the
+    scanner's category go in too, so "find the video files" works.
+    """
+    added = 0
+    for entry in files:
+        relative = entry.get("path", "")
+        if not relative:
+            continue
+        extension = (entry.get("extension") or "").lower()
+        category = ndos_report.categorise(extension, entry.get("name", ""))
+        segments = list(Path(relative).parts[:-1])
+        _add(
+            db,
+            kind=PATH,
+            evidence=OBSERVED,
+            path=relative,
+            body=f"{relative} {extension} {category}",
+            locator=ndos_scan._human_bytes(entry.get("size_bytes", 0)),
+            subject=ndos_organize._find_subject(segments)[0] or "",
+            session=_session_label(segments),
+        )
+        added += 1
+    return added
+
+
 def build(
     source: Path,
     index_path: Path,
@@ -432,6 +475,7 @@ def build(
         documents, unreadable = _index_documents(
             db, source, manifest.get("files", []), subjects, exclude, on_progress
         )
+        named = _index_paths(db, manifest.get("files", []))
 
         summary = {
             "index_version": INDEX_VERSION,
@@ -443,6 +487,7 @@ def build(
             "documents_indexed": documents,
             "documents_unreadable": unreadable,
             "metadata_rows_indexed": declared,
+            "files_named": named,
             "known_subjects": len(subjects),
         }
         for key, value in summary.items():
@@ -470,6 +515,38 @@ def _escape_query(text: str) -> str:
     return " ".join(f'"{word}"' if not word.endswith("*") else word for word in words)
 
 
+#: How many name matches to read before summarising. A search for a common
+#: token on a million-file drive should not pull a million rows into memory to
+#: count them; the directory summary is accurate up to here and says when it
+#: stopped.
+NAME_MATCH_CAP = 5000
+
+
+def _by_directory(rows: Sequence[sqlite3.Row]) -> List[Dict[str, Any]]:
+    """Name matches, collapsed to the directories holding them."""
+    folders: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        parent = str(Path(row["path"]).parent)
+        if parent == ".":
+            parent = "(root)"
+        entry = folders.setdefault(
+            parent,
+            {
+                "directory": parent,
+                "file_count": 0,
+                "examples": [],
+                "subject": row["subject"] or "",
+                "session": row["session"] or "",
+            },
+        )
+        entry["file_count"] += 1
+        if len(entry["examples"]) < 3:
+            entry["examples"].append(Path(row["path"]).name)
+    return sorted(
+        folders.values(), key=lambda e: (-e["file_count"], e["directory"])
+    )
+
+
 def _wideneable(expression: str) -> bool:
     """Whether widening to a prefix search is safe and meaningful."""
     return "*" not in expression and not any(
@@ -493,27 +570,28 @@ def find(
         )
     db = _connect(index_path)
 
-    def run(expression: str) -> List[sqlite3.Row]:
+    def run(expression: str, kinds: Sequence[str], cap: int) -> List[sqlite3.Row]:
+        placeholders = ",".join("?" * len(kinds))
         try:
             return db.execute(
-                """
+                f"""
                 SELECT s.kind, s.evidence, s.path, s.locator, s.subject,
                        s.session, s.mentions,
                        snippet(search, 0, '[', ']', ' … ', 14) AS snippet,
                        bm25(search) AS score
                 FROM search JOIN sources s ON s.id = search.rowid
-                WHERE search MATCH ?
+                WHERE search MATCH ? AND s.kind IN ({placeholders})
                 ORDER BY score
                 LIMIT ?
                 """,
-                (expression, limit),
+                (expression, *kinds, cap),
             ).fetchall()
         except sqlite3.OperationalError as error:
             raise ValueError(f"could not read {query!r} as a search: {error}")
 
     try:
         expression = _escape_query(query)
-        rows = run(expression)
+        rows = run(expression, ("document", "metadata"), limit)
 
         # Lab vocabulary is full of suffixed names -- GCaMP6f, AAV9, C57BL/6J --
         # and FTS5 treats each as one token, so an exact search for "GCaMP"
@@ -524,9 +602,21 @@ def find(
         if not rows and _wideneable(expression):
             wider = _as_prefix(expression)
             if wider != expression:
-                rows = run(wider)
-                if rows:
+                found = run(wider, ("document", "metadata"), limit)
+                if found:
+                    rows, expression, widened = found, wider, True
+
+        # Names are searched separately and summarised by directory. A drive
+        # where 240 files sit under raw_data/M123 should say so, not list 240
+        # rows: the useful answer is which parts of the tree are involved.
+        named = run(expression, (PATH,), NAME_MATCH_CAP)
+        if not named and not widened and _wideneable(expression):
+            wider = _as_prefix(expression)
+            if wider != expression:
+                named = run(wider, (PATH,), NAME_MATCH_CAP)
+                if named:
                     expression, widened = wider, True
+        directories = _by_directory(named)
 
         meta = {
             row["key"]: row["value"]
@@ -555,12 +645,22 @@ def find(
             "match_count": len(hits),
             "limit": limit,
             "hits": hits,
+            "name_match_count": len(named),
+            "name_matches_capped": len(named) >= NAME_MATCH_CAP,
+            "directories": directories,
         }
     finally:
         db.close()
 
 
 def render_build(summary: Dict[str, Any]) -> str:
+    rows = [
+        ("Files findable by name", summary["files_named"]),
+        ("Documents read", summary["documents_indexed"]),
+        ("Metadata rows", summary["metadata_rows_indexed"]),
+        ("Known animals", summary["known_subjects"]),
+    ]
+    width = max(len(label) for label, _ in rows)
     lines = [
         "=" * 72,
         "NDOS SEARCH INDEX",
@@ -568,59 +668,98 @@ def render_build(summary: Dict[str, Any]) -> str:
         f"Source    : {summary['source_root']}",
         f"Built     : {summary['generated_at']}",
         "",
-        f"Documents read      : {summary['documents_indexed']}",
-        f"Metadata rows        : {summary['metadata_rows_indexed']}",
-        f"Known animals        : {summary['known_subjects']}",
     ]
+    lines += [f"{label:<{width}} : {value}" for label, value in rows]
     if summary["documents_unreadable"]:
         lines.append(
-            f"Unreadable           : {summary['documents_unreadable']} "
-            "(binary, empty, or a format needing a parser NDOS does not bundle)"
+            f"{'Contents unreadable':<{width}} : "
+            f"{summary['documents_unreadable']} (binary, empty, or a format "
+            "needing a parser NDOS does not bundle -- the names are still "
+            "searchable)"
         )
-    lines += [
-        "",
-        "Search it with: ndos search find \"<words>\"",
-    ]
+    lines += ["", 'Search it with: ndos search find "<words>"']
     return "\n".join(lines)
 
 
 def render_find(result: Dict[str, Any]) -> str:
-    if not result["hits"]:
+    """Two kinds of answer, kept apart.
+
+    A file whose name contains the word and a document that discusses it are
+    different claims, and ranking them against each other is meaningless: a
+    note mentioning CA1 fifty times would outrank a folder full of CA1
+    recordings, or the reverse, depending on nothing of interest.
+    """
+    if not result["hits"] and not result["directories"]:
         return (
             f"Nothing matched {result['query']!r}.\n\n"
             "Searched as: " + result["expression"] + "\n"
             "A word absent from the index is not a word absent from the data: "
-            "only text files, Word and Excel documents and the metadata tables "
-            "are read. PDFs are not."
+            "file names are indexed in full, but of their contents only text "
+            "files, Word and Excel documents and the metadata tables are read. "
+            "PDFs are not."
         )
 
     lines = [
         "=" * 72,
-        f"{result['match_count']} result(s) for {result['query']!r}",
+        f"Results for {result['query']!r}",
         "=" * 72,
     ]
     if result.get("widened"):
         lines.append(
-            f"  No exact match, so this searched for words starting with it: "
-            f"{result['expression']}"
+            "  No exact match, so this searched for words starting with it: "
+            + result["expression"]
         )
-    for hit in result["hits"]:
-        where = hit["path"]
-        if hit["locator"]:
-            where += f"  ({hit['locator']})"
-        lines.append("")
-        lines.append(f"  {where}")
-        lines.append(f"      {hit['snippet']}")
-        trail = []
-        if hit["subject"]:
-            trail.append(f"subject {hit['subject']}")
-        if hit["session"]:
-            trail.append(f"session {hit['session']}")
-        if hit["mentions"]:
-            trail.append("names " + ", ".join(hit["mentions"]))
-        if trail:
-            lines.append("      " + " · ".join(trail))
-        lines.append(f"      {hit['evidence']}, from {hit['kind']}")
+
+    if result["directories"]:
+        total = result["name_match_count"]
+        capped = " (counted up to the cap)" if result["name_matches_capped"] else ""
+        lines += [
+            "",
+            "-" * 72,
+            f"FILES WHOSE NAME OR PATH MATCHES — {total} file(s){capped}",
+            "-" * 72,
+        ]
+        for folder in result["directories"][:12]:
+            lines.append("")
+            lines.append(f"  {folder['directory']}/    {folder['file_count']} file(s)")
+            lines.append("      e.g. " + ", ".join(folder["examples"]))
+            trail = []
+            if folder["subject"]:
+                trail.append(f"subject {folder['subject']}")
+            if folder["session"]:
+                trail.append(f"session {folder['session']}")
+            if trail:
+                lines.append("      " + " · ".join(trail))
+        if len(result["directories"]) > 12:
+            lines.append("")
+            lines.append(
+                f"  … and {len(result['directories']) - 12} more directories"
+            )
+
+    if result["hits"]:
+        lines += [
+            "",
+            "-" * 72,
+            f"DOCUMENTS AND RECORDS MENTIONING IT — {result['match_count']}",
+            "-" * 72,
+        ]
+        for hit in result["hits"]:
+            where = hit["path"]
+            if hit["locator"]:
+                where += f"  ({hit['locator']})"
+            lines.append("")
+            lines.append(f"  {where}")
+            lines.append(f"      {hit['snippet']}")
+            trail = []
+            if hit["subject"]:
+                trail.append(f"subject {hit['subject']}")
+            if hit["session"]:
+                trail.append(f"session {hit['session']}")
+            if hit["mentions"]:
+                trail.append("names " + ", ".join(hit["mentions"]))
+            if trail:
+                lines.append("      " + " · ".join(trail))
+            lines.append(f"      {hit['evidence']}, from {hit['kind']}")
 
     lines += [
         "",
@@ -681,7 +820,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(json.dumps(result, indent=2))
         else:
             print(render_find(result))
-        return 0 if result["hits"] else 1
+        return 0 if (result["hits"] or result["directories"]) else 1
     except (ValueError, RuntimeError) as error:
         print(f"ndos search: {error}", file=sys.stderr)
         return 2
