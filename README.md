@@ -48,6 +48,57 @@ above, so a lab that has already chosen a layout can still use the rest.
 > specification is a draft. Interfaces may change. No external lab has
 > completed a pilot yet — [that is what we are looking for](#looking-for-pilot-testers).
 
+## See the part that matters, in ten seconds
+
+Four sessions, four animals, one question — and three different answers. This
+output is committed in the repository, so it is what the code actually prints:
+
+```
+Considered 4 sessions: 1 matched, 2 unresolved, 1 excluded.
+
+MATCHED (1)
+  ndos-0000000001  raw_data/M101/20250310
+      species = mus musculus  (declared)
+      sex = F  (declared)
+      target_region = dorsal CA1  (declared)
+
+CANNOT BE RULED OUT (2)
+  These meet every criterion that could be checked, but a deciding
+  value was never recorded. They are not non-matches.
+
+  ndos-0000000003  raw_data/M103/20250310
+      sex: recorded as unknown; checked but could not be determined
+  ndos-0000000004  raw_data/M104/20250311
+      species: never entered
+
+EXCLUDED (1)
+     1 excluded by  species=mouse
+```
+
+`M102` is a rat — recorded evidence contradicts the query. `M103` and `M104`
+are the reason this exists. A tool reporting only matched and excluded would
+say **1 of 4** and look clean; the truth is one match and two sessions nobody
+can decide, for two different reasons — one was checked and came back
+`unknown`, the other was never filled in.
+
+Treating either as "not a mouse" biases the cohort towards whichever animals
+happened to have fuller records, and says nothing about having done so.
+
+Why each animal lands where it does is spelled out in
+[examples/cohort-demo/](examples/cohort-demo/). A test regenerates that output
+and fails if it drifts, so what you just read is what the code does.
+
+To run it yourself — the example ships in the repository, so clone rather than
+install:
+
+```bash
+git clone https://github.com/Elnazkarami/N-DOS.git ndos && cd ndos
+python3 ndos.py table check examples/cohort-demo/metadata --emit linked.json --include-empty
+python3 ndos.py query linked.json -w species=mouse -w sex=F -w 'target_region~CA1'
+```
+
+---
+
 ## Looking for pilot testers
 
 If you have a directory of lab data nobody fully understands any more, that is
