@@ -1,7 +1,7 @@
 # The schemas are the published contracts of the N-DOS standard, and the two
 # guides are how anyone learns to use it. A source distribution that omitted
 # them would ship the implementation without the thing it implements.
-include LICENSE NOTICE CITATION.cff
+include LICENSE NOTICE CITATION.cff CONTRIBUTING.md
 include README.md QUICKSTART.md RECIPES.md LEGACY.md SPECIFICATION.md
 recursive-include schemas *.json
 recursive-include ndos_gui_static *
@@ -15,3 +15,6 @@ include .github/workflows/tests.yml
 
 # No working files.
 global-exclude *.pyc __pycache__ .DS_Store
+
+# The worked example, and the test that keeps its committed output honest.
+recursive-include examples *

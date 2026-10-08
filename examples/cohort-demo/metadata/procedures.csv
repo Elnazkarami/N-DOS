@@ -1,0 +1,4 @@
+procedure_id,subject_id,procedure_date,procedure_type,target_region,construct_or_drug,dose,notes
+P01,M101,2025-02-10,injection,dorsal CA1,AAV9-GCaMP6f,300nl,
+P02,M102,2025-02-10,injection,dorsal CA1,AAV9-GCaMP6f,300nl,
+P03,M103,2025-02-10,injection,dorsal CA1,AAV9-GCaMP6f,300nl,

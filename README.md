@@ -29,8 +29,11 @@ Four things it does that a file browser cannot:
 - **Traceability.** Records what produced a result, and traces a figure back
   through the commands and parameters to the raw files it came from.
 
-Nothing moves or changes unless you ask. Four commands write; each shows a plan
-and waits for confirmation.
+Nothing changes what is already on your disk unless you name a command that
+does. Three can, and each shows a plan and waits: `organize --mode move`,
+`tags sweep --apply`, `protect --apply`. Other commands write new files — a
+manifest, metadata sheets, a search index, a layout of symlinks, a BIDS export
+— always at a path you give them, never over your originals.
 
 **The layout** is one part of this, not the whole of it.
 [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)
@@ -44,6 +47,57 @@ above, so a lab that has already chosen a layout can still use the rest.
 > is tested against real lab storage on Linux, macOS and Windows. The
 > specification is a draft. Interfaces may change. No external lab has
 > completed a pilot yet — [that is what we are looking for](#looking-for-pilot-testers).
+
+## See the part that matters, in ten seconds
+
+Four sessions, four animals, one question — and three different answers. This
+output is committed in the repository, so it is what the code actually prints:
+
+```
+Considered 4 sessions: 1 matched, 2 unresolved, 1 excluded.
+
+MATCHED (1)
+  ndos-0000000001  raw_data/M101/20250310
+      species = mus musculus  (declared)
+      sex = F  (declared)
+      target_region = dorsal CA1  (declared)
+
+CANNOT BE RULED OUT (2)
+  These meet every criterion that could be checked, but a deciding
+  value was never recorded. They are not non-matches.
+
+  ndos-0000000003  raw_data/M103/20250310
+      sex: recorded as unknown; checked but could not be determined
+  ndos-0000000004  raw_data/M104/20250311
+      species: never entered
+
+EXCLUDED (1)
+     1 excluded by  species=mouse
+```
+
+`M102` is a rat — recorded evidence contradicts the query. `M103` and `M104`
+are the reason this exists. A tool reporting only matched and excluded would
+say **1 of 4** and look clean; the truth is one match and two sessions nobody
+can decide, for two different reasons — one was checked and came back
+`unknown`, the other was never filled in.
+
+Treating either as "not a mouse" biases the cohort towards whichever animals
+happened to have fuller records, and says nothing about having done so.
+
+Why each animal lands where it does is spelled out in
+[examples/cohort-demo/](examples/cohort-demo/). A test regenerates that output
+and fails if it drifts, so what you just read is what the code does.
+
+To run it yourself — the example ships in the repository, so clone rather than
+install:
+
+```bash
+git clone https://github.com/Elnazkarami/N-DOS.git ndos && cd ndos
+python3 ndos.py table check examples/cohort-demo/metadata --emit linked.json --include-empty
+python3 ndos.py query linked.json -w species=mouse -w sex=F -w 'target_region~CA1'
+```
+
+---
 
 ## Looking for pilot testers
 
@@ -70,19 +124,20 @@ to be inventoried is often an acquisition PC where you are not allowed to
 install anything.
 
 ```bash
-git clone https://github.com/Elnazkarami/N-DOS-.git ndos
+git clone https://github.com/Elnazkarami/N-DOS.git ndos
 cd ndos
 python3 ndos.py --help
 python3 ndos.py report /path/to/your/data
 ```
 
 Every module is also a standalone script — `python3 ndos_report.py ...` works
-identically, and a single file can be copied out and run on its own.
+identically. They are not single files you can lift out individually, though:
+most import their siblings, so run them from the checkout.
 
 If you would rather type `ndos report` than `python3 ndos.py report`:
 
 ```bash
-pip install ndos          # once published
+pip install ndos
 pip install -e .          # or from a clone
 ```
 
@@ -121,10 +176,13 @@ python3 ndos.py query    linked.json -w species=mouse -w target_region=CA1
 python3 ndos.py convert  bids ./project -d ./bids-export --write
 ```
 
-Nothing in that sequence moves or modifies your data. The layout is built
-from symbolic links; the only commands that ever write to your files are
-`ndos_organize --mode move`, `ndos_archive extract`, and `ndos_tags sweep
---apply`, each of which shows a plan and asks first.
+Nothing in that sequence changes your data. It writes a manifest, a search
+index, metadata sheets and an export, each at a path you named, and the layout
+is built from symbolic links pointing at your originals. The commands that can
+change what is already on disk are `organize --mode move`, `tags sweep
+--apply` and `protect --apply`; none of them is above, and each shows a plan
+and asks first. (`archive extract` writes new files too, but never alters the
+archive it read.)
 
 ## Modules
 

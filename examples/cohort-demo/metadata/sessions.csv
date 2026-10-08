@@ -1,0 +1,5 @@
+ndos_id,observed_path,observed_file_count,observed_bytes,subject_id,session_date,session_type,task,qc_status,notes
+ndos-0000000001,raw_data/M101/20250310,24,1048576,M101,2025-03-10,electrophysiology,alternation,pass,
+ndos-0000000002,raw_data/M102/20250310,24,1048576,M102,2025-03-10,electrophysiology,alternation,pass,
+ndos-0000000003,raw_data/M103/20250310,24,1048576,M103,2025-03-10,electrophysiology,alternation,pass,
+ndos-0000000004,raw_data/M104/20250311,18,786432,M104,2025-03-11,electrophysiology,alternation,pass,

@@ -1,0 +1,5 @@
+subject_id,species,strain,sex,date_of_birth,genotype,source,notes
+M101,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,
+M102,rattus norvegicus,Long-Evans,F,2024-10-15,WT,Charles River,
+M103,mus musculus,C57BL/6J,unknown,2024-11-01,WT,Jackson,sex never recorded on the cage card
+M104,,,,,,,nothing was ever entered for this animal
