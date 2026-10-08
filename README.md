@@ -29,8 +29,11 @@ Four things it does that a file browser cannot:
 - **Traceability.** Records what produced a result, and traces a figure back
   through the commands and parameters to the raw files it came from.
 
-Nothing moves or changes unless you ask. Four commands write; each shows a plan
-and waits for confirmation.
+Nothing changes what is already on your disk unless you name a command that
+does. Three can, and each shows a plan and waits: `organize --mode move`,
+`tags sweep --apply`, `protect --apply`. Other commands write new files — a
+manifest, metadata sheets, a search index, a layout of symlinks, a BIDS export
+— always at a path you give them, never over your originals.
 
 **The layout** is one part of this, not the whole of it.
 [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)
@@ -70,19 +73,20 @@ to be inventoried is often an acquisition PC where you are not allowed to
 install anything.
 
 ```bash
-git clone https://github.com/Elnazkarami/N-DOS-.git ndos
+git clone https://github.com/Elnazkarami/N-DOS.git ndos
 cd ndos
 python3 ndos.py --help
 python3 ndos.py report /path/to/your/data
 ```
 
 Every module is also a standalone script — `python3 ndos_report.py ...` works
-identically, and a single file can be copied out and run on its own.
+identically. They are not single files you can lift out individually, though:
+most import their siblings, so run them from the checkout.
 
 If you would rather type `ndos report` than `python3 ndos.py report`:
 
 ```bash
-pip install ndos          # once published
+pip install ndos
 pip install -e .          # or from a clone
 ```
 
@@ -121,10 +125,13 @@ python3 ndos.py query    linked.json -w species=mouse -w target_region=CA1
 python3 ndos.py convert  bids ./project -d ./bids-export --write
 ```
 
-Nothing in that sequence moves or modifies your data. The layout is built
-from symbolic links; the only commands that ever write to your files are
-`ndos_organize --mode move`, `ndos_archive extract`, and `ndos_tags sweep
---apply`, each of which shows a plan and asks first.
+Nothing in that sequence changes your data. It writes a manifest, a search
+index, metadata sheets and an export, each at a path you named, and the layout
+is built from symbolic links pointing at your originals. The commands that can
+change what is already on disk are `organize --mode move`, `tags sweep
+--apply` and `protect --apply`; none of them is above, and each shows a plan
+and asks first. (`archive extract` writes new files too, but never alters the
+archive it read.)
 
 ## Modules
 

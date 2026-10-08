@@ -12,7 +12,7 @@ minutes, most of it waiting for a scan.
 You need Python 3.9 or newer. Nothing else — no `pip install`, no environment.
 
 ```bash
-git clone https://github.com/Elnazkarami/N-DOS-.git ndos
+git clone https://github.com/Elnazkarami/N-DOS.git ndos
 cd ndos
 python3 ndos.py --help
 ```
@@ -36,8 +36,13 @@ including `.docx` and `.xlsx` — and tells you which animals each hit names.
 
 **NDOS does not move or change your data.** Scanning reads files and writes
 nothing. The layout it builds is made of shortcuts pointing at your originals.
-Three commands *can* write — `organize --mode move`, `archive extract`, and
-`tags sweep --apply` — and each shows you a plan and asks before doing anything.
+
+Three commands *can* change what is already on disk, and each shows you a plan
+and asks first: `organize --mode move` moves your files instead of linking
+them, `tags sweep --apply` deletes files you have confirmed, and
+`protect --apply` makes raw data read-only. Several others write new files — a
+manifest, metadata sheets, a search index, an extracted archive — always at a
+path you give them.
 
 If you are nervous, point it at a copy first. But you should not have to.
 
@@ -286,14 +291,18 @@ python3 ndos.py report /tmp/messy-lab
 
 ## If something goes wrong
 
-Nothing you have run above modified your data, so there is nothing to undo
-except a project directory you can delete.
+Everything up to "When you are ready to share" only reads your data, so there
+is nothing to undo except a project directory you can delete. Past that point,
+two steps do change something: `protect --apply` makes raw data read-only
+(reverse it with `chmod`, or `ndos protect --check` to see what it did), and
+`tags sweep --apply` deletes files, which it will not do without naming them
+first.
 
 **[RECIPES.md](RECIPES.md) covers the common ones**: everything landing in
 `flagged_data/`, the wrong folder being read as the subject, a session split in
 two, a scan that will not finish, and how to prove for yourself that nothing
 was altered.
 
-Please report what happened: <https://github.com/Elnazkarami/N-DOS-/issues>.
+Please report what happened: <https://github.com/Elnazkarami/N-DOS/issues>.
 A wrong guess about your folder structure is a useful bug — it means the rules
 do not yet cover a layout that real labs use.

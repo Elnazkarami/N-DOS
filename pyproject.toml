@@ -39,8 +39,8 @@ dependencies = []
 test = ["jsonschema>=4"]
 
 [project.urls]
-Homepage = "https://github.com/Elnazkarami/N-DOS-"
-Repository = "https://github.com/Elnazkarami/N-DOS-"
+Homepage = "https://github.com/Elnazkarami/N-DOS"
+Repository = "https://github.com/Elnazkarami/N-DOS"
 
 [tool.setuptools.package-data]
 ndos_gui_static = ["**/*"]
