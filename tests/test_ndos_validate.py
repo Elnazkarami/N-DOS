@@ -194,6 +194,53 @@ class SpecificationTests(unittest.TestCase):
         for label, _, _ in ndos_organize.TYPE_RULES:
             self.assertIn(f"`{label}`", spec, f"{label} is not in the specification")
 
+    def test_every_vocabulary_value_is_written_in_the_specification(self):
+        """The spec is the thing another implementation reads.
+
+        Three of the five vocabularies lived only in ndos_table.py, so the
+        standard did not actually say what `session_type` or `qc_status` or
+        `procedure_type` accept -- and an email claiming they were published
+        with the specification would have been two-fifths true.
+        """
+        import ndos_table
+
+        spec = (
+            Path(__file__).resolve().parent.parent / "SPECIFICATION.md"
+        ).read_text(encoding="utf-8")
+        for field, allowed in ndos_table.VOCABULARIES.items():
+            self.assertIn(
+                f"`{field}`", spec, f"{field} is not named in the specification"
+            )
+            for value in allowed:
+                self.assertIn(
+                    f"`{value}`", spec,
+                    f"{field} accepts {value!r} and the specification does not say so",
+                )
+
+    def test_every_declared_column_is_written_in_the_specification(self):
+        import ndos_table
+
+        spec = (
+            Path(__file__).resolve().parent.parent / "SPECIFICATION.md"
+        ).read_text(encoding="utf-8")
+        columns = (
+            ndos_table.ANIMAL_COLUMNS
+            + ndos_table.PROCEDURE_COLUMNS
+            + ndos_table.SESSION_DECLARED_COLUMNS
+        )
+        for column in columns:
+            self.assertIn(
+                f"`{column}`", spec, f"{column} is not in the specification"
+            )
+
+    def test_the_evidence_statuses_are_written_in_the_specification(self):
+        """The distinction the whole project rests on has to be stated."""
+        spec = (
+            Path(__file__).resolve().parent.parent / "SPECIFICATION.md"
+        ).read_text(encoding="utf-8")
+        for status in ("observed", "declared", "computed", "unknown"):
+            self.assertIn(f"`{status}`", spec, status)
+
     def test_every_session_type_the_vocabulary_allows_can_name_a_file(self):
         """The Scope claims calcium imaging and histology; the types must too.
 
