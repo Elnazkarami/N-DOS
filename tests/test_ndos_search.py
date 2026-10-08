@@ -545,6 +545,122 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(hits[0]["recordings"], [])
 
 
+class TagTests(unittest.TestCase):
+    """Flags a person set, reachable through search.
+
+    `ndos tags` records that somebody checked a recording, or that a folder is
+    scratch agreed safe to remove. None of that reached search, so a hit gave
+    no hint whether you had found real data or something queued for deletion.
+    """
+
+    def setUp(self):
+        import ndos_init
+        import ndos_tags
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.project = self.root / "study"
+        ndos_init.initialize(self.project)
+        raw, _ = ndos_init.add_session(self.project, "M123", "2025-03-14")
+        self.recording = raw / "M123_20250314_raw.dat"
+        self.recording.write_bytes(b"signal")
+
+        scratch = self.project / "processed_data" / "M123" / "20250314" / "temp"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.junk = scratch / "temp_wh.dat"
+        self.junk.write_bytes(b"x")
+        # No flag of its own, in a conventionally named scratch folder.
+        self.draft = scratch / "CA1_draft.npy"
+        self.draft.write_bytes(b"x")
+
+        ndos_tags.set_tags(
+            self.recording, {"validated": True},
+            note="checked against the rig log",
+        )
+        ndos_tags.set_tags(
+            self.junk, {"temp": True, "deletable": True}, note="kilosort scratch",
+        )
+
+        self.index = self.root / "i.db"
+        self.summary = ndos_search.build(self.project, self.index, quiet=True)
+
+    def folder(self, query, name):
+        return next(
+            entry
+            for entry in ndos_search.find(self.index, query)["directories"]
+            if name in entry["directory"]
+        )
+
+    def test_a_flag_is_searchable(self):
+        result = ndos_search.find(self.index, "deletable")
+        self.assertEqual(result["name_match_count"], 1)
+        self.assertIn("temp_wh.dat", result["directories"][0]["examples"])
+
+    def test_validated_is_searchable(self):
+        self.assertEqual(
+            ndos_search.find(self.index, "validated")["name_match_count"], 1
+        )
+
+    def test_the_note_is_searchable(self):
+        """The note is the only place a person explains a judgement."""
+        result = ndos_search.find(self.index, '"rig log"')
+        self.assertEqual(result["name_match_count"], 1)
+
+    def test_an_unrelated_search_still_reports_the_flags(self):
+        """Finding CA1 and not noticing it is scratch is the real mistake."""
+        text = ndos_search.render_find(ndos_search.find(self.index, "CA1"))
+        self.assertIn("looks-like-scratch", text)
+
+    def test_a_flag_set_by_a_person_is_not_confused_with_an_inference(self):
+        flagged = self.folder("deletable", "temp")["tags"]
+        self.assertIn("deletable", flagged)
+        self.assertNotIn("looks-like-scratch", flagged)
+
+        inferred = self.folder("looks-like-scratch", "temp")["tags"]
+        self.assertIn("looks-like-scratch", inferred)
+        self.assertNotIn("deletable", inferred)
+
+    def test_a_scratch_name_alone_is_only_an_inference(self):
+        """CA1_draft.npy carries no flag; NDOS noticed the folder it is in."""
+        result = ndos_search.find(self.index, "looks-like-scratch")
+        self.assertEqual(result["name_match_count"], 1)
+        self.assertIn("CA1_draft.npy", result["directories"][0]["examples"])
+
+    def test_ndos_own_records_are_not_called_scratch(self):
+        """tags.json sits inside scratch folders and is not scratch."""
+        for entry in ndos_search.find(self.index, "looks-like-scratch")["directories"]:
+            for name in entry["examples"]:
+                self.assertNotIn(name, ndos_search.OWN_FILES)
+
+    def test_ndos_own_records_are_not_indexed_as_lab_documents(self):
+        """Searching a flag returned tags.json itself: NDOS talking to itself."""
+        hits = ndos_search.find(self.index, "deletable")["hits"]
+        self.assertEqual([h["path"] for h in hits if "tags.json" in h["path"]], [])
+
+    def test_a_directory_where_everything_is_flagged_says_all(self):
+        self.assertIn("all validated", ndos_search.render_find(
+            ndos_search.find(self.index, "M123_20250314_raw")
+        ))
+
+    def test_the_summary_counts_flagged_files(self):
+        self.assertEqual(self.summary["files_flagged"], 2)
+
+    def test_the_name_match_count_is_the_number_of_files(self):
+        """It reported the animals named by the last hit instead.
+
+        `named` held the name-match rows and was then reused inside the hit
+        loop for the animals a document mentions, so the count silently
+        became a different, plausible-looking number.
+        """
+        result = ndos_search.find(self.index, "dat")
+        self.assertEqual(
+            result["name_match_count"],
+            sum(entry["file_count"] for entry in result["directories"]),
+        )
+
+
 
 
 if __name__ == "__main__":
