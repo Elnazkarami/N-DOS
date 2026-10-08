@@ -92,6 +92,10 @@ jobs:
           # by name: that is most of a real drive.
           python ndos_search.py find 'bin' -i /tmp/search.db
           python ndos_search.py find 'surgery' -i /tmp/search.db
+          # Flags a person set must be reachable through search.
+          python ndos_tags.py set /tmp/project2/raw_data/*/*/* --validated --note 'checked on the rig' -q || true
+          python ndos_search.py index /tmp/project2 -i /tmp/tagged.db
+          python ndos_search.py find 'validated' -i /tmp/tagged.db
           # A word nobody wrote must exit 1 rather than pretending.
           python ndos_search.py find 'optogenetics' -i /tmp/search.db && exit 1 || true
           # Provenance round trip: wrap a command, then trace its output back.

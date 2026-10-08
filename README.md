@@ -552,6 +552,29 @@ It reads `.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv` — and `.docx` and
 is not read**, because that would mean bundling a parser, and the output says so
 rather than returning a quiet empty result.
 
+**Flags are searchable, and shown.** A file `ndos tags` marked `validated`,
+`temp` or `deletable` carries that into search, along with the note whoever
+set it wrote — which is the only place a person explains a judgement. So
+`ndos search find deletable` lists what is queued for removal, and
+`ndos search find "rig log"` finds the recording somebody checked against it.
+
+It also matters in the other direction. Searching `CA1` tells you which of
+the hits you can trust:
+
+```
+  processed_data/M123/20250314/temp/    1 file(s)
+      e.g. CA1_draft.npy
+      subject M123 · session 20250314 · all looks-like-scratch
+
+  raw_data/M123/20250314/    1 file(s)
+      e.g. M123_20250314_raw.dat
+      subject M123 · session 20250314 · all validated
+```
+
+`looks-like-scratch` is NDOS noticing a conventional scratch name, not a flag
+anybody set — the two are reported separately and never merged, because one is
+an observation and the other is a person's judgement.
+
 `AND`, `OR`, `NOT`, `"quoted phrases"` and `prefix*` all work. A search that
 finds nothing exactly is retried as a prefix — lab vocabulary is full of
 suffixed names like `GCaMP6f`, which is one token to a search engine — and it

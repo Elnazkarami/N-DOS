@@ -45,6 +45,7 @@ import ndos_organize
 import ndos_report
 import ndos_scan
 import ndos_table
+import ndos_tags
 
 INDEX_VERSION = "0.1"
 GENERATOR_VERSION = "0.1.0"
@@ -57,6 +58,15 @@ DEFAULT_INDEX = "ndos-search.db"
 TEXT_EXTENSIONS = frozenset({
     ".txt", ".md", ".rst", ".log", ".json", ".yaml", ".yml", ".xml",
     ".toml", ".ini", ".cfg", ".csv", ".tsv", ".tab", ".m", ".py", ".r",
+})
+
+#: Files NDOS writes for its own bookkeeping. Their contents are already
+#: represented elsewhere in the index -- tags.json becomes flags on the files
+#: it describes -- so indexing them as documents returns NDOS talking to
+#: itself. A project README is not here: somebody wrote that on purpose.
+OWN_FILES = frozenset({
+    "tags.json", "project.toml", "derived_metadata.json",
+    ".ndos-layout-log.json",
 })
 
 #: Office formats that are a ZIP of XML, and so readable without a dependency.
@@ -219,7 +229,8 @@ def _create(db: sqlite3.Connection) -> None:
             locator  TEXT,            -- which row or field inside it
             subject  TEXT,            -- the animal, where it is known
             session  TEXT,            -- the session, where it is known
-            mentions TEXT             -- animals this text names, comma separated
+            mentions TEXT,            -- animals this text names, comma separated
+            tags     TEXT             -- flags set on it, comma separated
         );
         -- What each animal's recordings are, copied in at index time so a
         -- search does not depend on the metadata tables still being where
@@ -263,11 +274,15 @@ def _add(
     subject: str = "",
     session: str = "",
     mentions: Sequence[str] = (),
+    tags: Sequence[str] = (),
 ) -> None:
     cursor = db.execute(
-        "INSERT INTO sources (kind, evidence, path, locator, subject, session, mentions)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (kind, evidence, path, locator, subject, session, ",".join(mentions)),
+        "INSERT INTO sources (kind, evidence, path, locator, subject, session,"
+        " mentions, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            kind, evidence, path, locator, subject, session,
+            ",".join(mentions), ",".join(tags),
+        ),
     )
     db.execute(
         "INSERT INTO search (rowid, body) VALUES (?, ?)", (cursor.lastrowid, body)
@@ -360,7 +375,7 @@ def _index_documents(
     indexed = skipped = 0
     for entry in files:
         relative = entry.get("path", "")
-        if relative in exclude:
+        if relative in exclude or Path(relative).name in OWN_FILES:
             continue
         extension = (entry.get("extension") or "").lower()
         if extension not in TEXT_EXTENSIONS and extension not in ZIP_XML_EXTENSIONS:
@@ -435,9 +450,33 @@ def _index_recordings(db: sqlite3.Connection, metadata_dir: Path) -> int:
     return added
 
 
+def _collect_tags(root: Path) -> Dict[str, Dict[str, Any]]:
+    """Every flag a person has set below a directory, by relative path.
+
+    `ndos tags` already walks the tags.json files and returns exactly this;
+    reading them again here would be a second answer to "what is flagged".
+    """
+    try:
+        entries = ndos_tags.collect(root)
+    except Exception:
+        return {}
+    return {
+        entry["relative"]: entry["flags"]
+        for entry in entries
+        if entry.get("relative")
+    }
+
+
+def _tag_words(flags: Dict[str, Any]) -> List[str]:
+    """The flags that are set, as words. Cleared flags say nothing."""
+    return [name for name in ndos_tags.FLAGS if flags.get(name) is True]
+
+
 def _index_paths(
     db: sqlite3.Connection,
     files: Sequence[Dict[str, Any]],
+    tags: Optional[Dict[str, Dict[str, Any]]] = None,
+    root: Optional[Path] = None,
 ) -> int:
     """Make every file findable by its name, whatever is inside it.
 
@@ -460,15 +499,41 @@ def _index_paths(
         extension = (entry.get("extension") or "").lower()
         category = ndos_report.categorise(extension, entry.get("name", ""))
         segments = list(Path(relative).parts[:-1])
+        flags = (tags or {}).get(relative, {})
+        set_flags = _tag_words(flags)
+        # Never upgraded to a flag: `temp` means a person said so, and this is
+        # NDOS noticing a conventional scratch name. Conflating the two is the
+        # mistake the whole evidence model exists to prevent.
+        inferred = (
+            not flags
+            and root is not None
+            # NDOS's own records sit wherever the data they describe sits,
+            # including inside scratch folders. They are not scratch, and
+            # `ndos tags sweep` would never remove them.
+            and Path(relative).name not in OWN_FILES
+            and ndos_tags.looks_temporary(root / relative, root)
+        )
+        # The flag names and the note join the searchable text, so "deletable"
+        # finds what is marked deletable and "rig log" finds the note that
+        # says why someone validated it. A note is the only place a person
+        # explains a judgement, which makes it worth more than the flag.
+        body = " ".join(
+            part for part in (
+                relative, extension, category,
+                " ".join(set_flags), str(flags.get("note") or ""),
+                "looks-like-scratch" if inferred else "",
+            ) if part
+        )
         _add(
             db,
             kind=PATH,
             evidence=OBSERVED,
             path=relative,
-            body=f"{relative} {extension} {category}",
+            body=body,
             locator=ndos_scan._human_bytes(entry.get("size_bytes", 0)),
             subject=ndos_organize._find_subject(segments)[0] or "",
             session=_session_label(segments),
+            tags=set_flags + (["looks-like-scratch"] if inferred else []),
         )
         added += 1
     return added
@@ -524,7 +589,8 @@ def build(
         documents, unreadable = _index_documents(
             db, source, manifest.get("files", []), subjects, exclude, on_progress
         )
-        named = _index_paths(db, manifest.get("files", []))
+        tags = _collect_tags(source)
+        named = _index_paths(db, manifest.get("files", []), tags, source)
         recordings = _index_recordings(db, metadata_dir) if metadata_dir else 0
 
         summary = {
@@ -539,6 +605,7 @@ def build(
             "metadata_rows_indexed": declared,
             "files_named": named,
             "sessions_linked": recordings,
+            "files_flagged": len(tags),
             "known_subjects": len(subjects),
         }
         for key, value in summary.items():
@@ -633,14 +700,33 @@ def _by_directory(rows: Sequence[sqlite3.Row]) -> List[Dict[str, Any]]:
                 "examples": [],
                 "subject": row["subject"] or "",
                 "session": row["session"] or "",
+                "tags": {},
             },
         )
         entry["file_count"] += 1
         if len(entry["examples"]) < 3:
             entry["examples"].append(Path(row["path"]).name)
+        for tag in (row["tags"] or "").split(","):
+            if tag:
+                entry["tags"][tag] = entry["tags"].get(tag, 0) + 1
     return sorted(
         folders.values(), key=lambda e: (-e["file_count"], e["directory"])
     )
+
+
+def _tag_phrase(counts: Dict[str, int], total: int) -> str:
+    """How a directory's flags read at a glance.
+
+    "4 deletable" matters more than the search hit itself: it says the files
+    you just found are scratch somebody has already agreed to remove.
+    """
+    parts = []
+    for name in list(ndos_tags.FLAGS) + ["looks-like-scratch"]:
+        count = counts.get(name, 0)
+        if not count:
+            continue
+        parts.append(f"all {name}" if count == total else f"{count} {name}")
+    return ", ".join(parts)
 
 
 def _wideneable(expression: str) -> bool:
@@ -672,7 +758,7 @@ def find(
             return db.execute(
                 f"""
                 SELECT s.kind, s.evidence, s.path, s.locator, s.subject,
-                       s.session, s.mentions,
+                       s.session, s.mentions, s.tags,
                        snippet(search, 0, '[', ']', ' … ', 14) AS snippet,
                        bm25(search) AS score
                 FROM search JOIN sources s ON s.id = search.rowid
@@ -723,7 +809,9 @@ def find(
             mentions = [m for m in (row["mentions"] or "").split(",") if m]
             # The animal a document names, and the one its location implies,
             # are the same question asked two ways.
-            named = list(dict.fromkeys(mentions + ([row["subject"]] if row["subject"] else [])))
+            animals = list(
+                dict.fromkeys(mentions + ([row["subject"]] if row["subject"] else []))
+            )
             hits.append({
                 "kind": row["kind"],
                 "evidence": row["evidence"],
@@ -732,9 +820,10 @@ def find(
                 "subject": row["subject"],
                 "session": row["session"],
                 "mentions": mentions,
+                "tags": [tag for tag in (row["tags"] or "").split(",") if tag],
                 "snippet": " ".join(row["snippet"].split()),
                 "score": round(-row["score"], 3),
-                "recordings": _recordings_for(db, named),
+                "recordings": _recordings_for(db, animals),
             })
         return {
             "index_version": meta.get("index_version", INDEX_VERSION),
@@ -760,6 +849,7 @@ def render_build(summary: Dict[str, Any]) -> str:
         ("Metadata rows", summary["metadata_rows_indexed"]),
         ("Known animals", summary["known_subjects"]),
         ("Sessions linked to them", summary["sessions_linked"]),
+        ("Files carrying flags", summary["files_flagged"]),
     ]
     width = max(len(label) for label, _ in rows)
     lines = [
@@ -829,6 +919,8 @@ def render_find(result: Dict[str, Any]) -> str:
                 trail.append(f"subject {folder['subject']}")
             if folder["session"]:
                 trail.append(f"session {folder['session']}")
+            if folder["tags"]:
+                trail.append(_tag_phrase(folder["tags"], folder["file_count"]))
             if trail:
                 lines.append("      " + " · ".join(trail))
         if len(result["directories"]) > 12:
@@ -858,6 +950,8 @@ def render_find(result: Dict[str, Any]) -> str:
                 trail.append(f"session {hit['session']}")
             if hit["mentions"]:
                 trail.append("names " + ", ".join(hit["mentions"]))
+            if hit["tags"]:
+                trail.append("flagged " + ", ".join(hit["tags"]))
             if trail:
                 lines.append("      " + " · ".join(trail))
             lines.append(f"      {hit['evidence']}, from {hit['kind']}")
