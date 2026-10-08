@@ -92,10 +92,18 @@ jobs:
           # by name: that is most of a real drive.
           python ndos_search.py find 'bin' -i /tmp/search.db
           python ndos_search.py find 'surgery' -i /tmp/search.db
-          # Flags a person set must be reachable through search.
-          python ndos_tags.py set /tmp/project2/raw_data/*/*/* --validated --note 'checked on the rig' -q || true
-          python ndos_search.py index /tmp/project2 -i /tmp/tagged.db
+          # Flags a person set must be reachable through search. An explicit
+          # path, not a glob: the first version of this used */*/* , which the
+          # runner left unexpanded, so the tag was never set and the search
+          # that followed failed for the wrong reason. No `|| true` either --
+          # masking the failure is what hid the cause.
+          python ndos_init.py /tmp/tagged --subject M123 --date 2025-03-14
+          echo signal > /tmp/tagged/raw_data/M123/20250314/M123_20250314_raw.dat
+          python ndos_tags.py set /tmp/tagged/raw_data/M123/20250314/M123_20250314_raw.dat \
+            --validated --note 'checked against the rig log' -q
+          python ndos_search.py index /tmp/tagged -i /tmp/tagged.db
           python ndos_search.py find 'validated' -i /tmp/tagged.db
+          python ndos_search.py find '"rig log"' -i /tmp/tagged.db
           # A word nobody wrote must exit 1 rather than pretending.
           python ndos_search.py find 'optogenetics' -i /tmp/search.db && exit 1 || true
           # Provenance round trip: wrap a command, then trace its output back.
