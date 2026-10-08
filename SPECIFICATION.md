@@ -176,17 +176,101 @@ directory happens to contain.
 
 ## 7. Metadata
 
-Metadata SHOULD record, for each subject: species, strain, sex, date of birth
-and genotype. For each session: date, type, task and quality. For each
-procedure — surgery, injection, implant, drug, training — the subject, date,
-type, target and agent.
-
 A value that has never been supplied MUST be distinguishable from one that was
 checked and could not be determined. An absent value and an unknown value are
-different facts, and treating them alike biases anything built on top.
+different facts, and treating them alike biases anything built on top of them:
+a cohort assembled without that distinction is weighted towards whichever
+animals happened to have fuller records, and reports no sign of it.
 
-Metadata MAY be stored as CSV, JSON or YAML. It SHOULD live in `metadata/`, or
-alongside the session it describes.
+This is the one requirement in this section. Everything below is the shape
+NDOS writes and reads, stated so that another implementation can match it.
+
+### 7.1 Three linked tables
+
+Metadata SHOULD be recorded as three tables, joined on `subject_id`. They MAY
+be stored as CSV, JSON or YAML; CSV is what the tools read and write, because
+it is what a lab already has. They SHOULD live in `metadata/`.
+
+**`animals.csv`** — one row per experimental subject.
+
+| Field | |
+| --- | --- |
+| `subject_id` | optional |
+| `species` | **required** |
+| `strain` | optional |
+| `sex` | **required** |
+| `date_of_birth` | optional |
+| `genotype` | optional |
+| `source` | optional |
+| `notes` | optional |
+
+**`procedures.csv`** — one row per intervention: surgery, injection, implant,
+lesion, drug, stimulation, training, perfusion.
+
+| Field | |
+| --- | --- |
+| `procedure_id` | optional |
+| `subject_id` | **required** |
+| `procedure_date` | optional |
+| `procedure_type` | optional |
+| `target_region` | optional |
+| `construct_or_drug` | optional |
+| `dose` | optional |
+| `notes` | optional |
+
+**`sessions.csv`** — one row per session. Alongside these, NDOS writes columns
+prefixed `observed_` recording what it found on disk; those are machine-filled
+and are overwritten on each export, so they MUST NOT be hand-edited.
+
+| Field | |
+| --- | --- |
+| `subject_id` | **required** |
+| `session_date` | **required** |
+| `session_type` | optional |
+| `task` | optional |
+| `qc_status` | optional |
+| `notes` | optional |
+
+### 7.2 Controlled vocabularies
+
+Where a field below has a vocabulary, a value outside it SHOULD be reported as
+unrecognised rather than accepted silently. Common spellings SHOULD be mapped
+onto the listed value — `mouse` onto `mus musculus`, `ephys` onto
+`electrophysiology` — and the original SHOULD be retained alongside, because a
+normalisation is a claim about what somebody meant.
+
+| Field | Allowed values |
+| --- | --- |
+| `sex` | `F`, `M`, `unknown` |
+| `species` | `mus musculus`, `rattus norvegicus`, `macaca mulatta`, `danio rerio`, `drosophila melanogaster`, `unknown` |
+| `session_type` | `electrophysiology`, `calcium imaging`, `behaviour`, `histology`, `surgery`, `training`, `other`, `unknown` |
+| `qc_status` | `pass`, `fail`, `review`, `unknown` |
+| `procedure_type` | `surgery`, `injection`, `implant`, `lesion`, `drug`, `stimulation`, `training`, `perfusion`, `other`, `unknown` |
+
+`strain`, `genotype`, `task`, `target_region`, `construct_or_drug`, `dose`,
+`source` and `notes` are free text. A field MAY additionally carry a resolvable
+identifier — NCBITaxon for a species, an RRID for a strain, UBERON for a target
+region — and such an identifier MUST NOT contradict the text beside it.
+
+### 7.3 How a value is known
+
+Every recorded value carries how it is known. A reader MUST be able to tell
+these apart:
+
+| | |
+| --- | --- |
+| `observed` | Read from storage: a path, a size, a checksum, a timestamp |
+| `declared` | Entered by a person: species, injection target, task |
+| `computed` | Derived by NDOS from values already recorded, never typed — age at a session, days since an injection |
+| `unknown` | Checked and could not be determined |
+
+A value nobody has supplied is **absent**, which is not the same as `unknown`.
+
+### 7.4 Dates
+
+A date MUST be written `YYYY-MM-DD`. A date in a form where day and month can
+be confused — `03/04/2025` names two different days depending on the reader's
+country — MUST be refused rather than guessed at.
 
 ## 8. Storage
 
@@ -247,6 +331,16 @@ before still conforms: the version number does not move. They were added
 because the tools recognised the file formats and the scope claimed the
 modalities, while the type list offered nothing to name them with — a project
 could hold a two-photon recording and have no conforming way to say so.
+
+§7 was expanded within `0.1` from prose into the tables, vocabularies and
+evidence statuses the tools already implemented. That was documentation
+catching up with the code rather than a change to the standard, with one
+exception: §7.4 now states that a metadata date MUST be written `YYYY-MM-DD`.
+§3 already forbade an ambiguous date in a SessionID and said nothing about
+metadata, so this is a new requirement. `ndos validate` does not test it --
+like the other MUSTs about what may be *done* to a project, it is stated
+because it is true, not because a checker can see it. `ndos table check`
+reports it.
 
 Separately, `ndos validate` now reports duplicate SessionIDs, which the
 Conformance section below has always required and the checker did not test. A
