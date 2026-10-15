@@ -178,9 +178,30 @@ Use the log, not `rm`.
 
 ## "Did it change my data?"
 
-No, unless you ran one of three commands and confirmed a prompt:
-`organize --mode move`, `archive extract`, or `tags sweep --apply`. Everything
-else reads.
+Not unless you ran one of three specific commands and confirmed a prompt. The
+honest version has three categories, because "writes nothing" and "does not
+touch your data" are different claims and NDOS used to conflate them.
+
+**Reads your data and writes nothing at all**
+`report`, `scan` without `-o`, `archive inspect`, `archive search`,
+`archive plan`, `organize plan`, `tags list`, `tags get`, `query`, `prov list`,
+`prov trace`, `validate`, `convert` without `--write`, `search find`,
+`table check`, `protect --check`, `gui` — the interface is read-only.
+
+**Writes new files, at a path you give it, never over your originals**
+`scan -o`, `table export`, `table check --emit`, `search index`,
+`organize apply` (a tree of symlinks in the destination), `archive extract`
+(into a destination; the archive itself is not altered), `convert --write`,
+`init`, `prov run`, `tags set`, `tags index`.
+
+**Changes what is already on your disk — plan shown, confirmation required**
+`organize --mode move` moves your files instead of linking them.
+`tags sweep --apply` deletes files, and never without listing them first.
+`protect --apply` makes raw data read-only; `protect --check` shows what it
+did, and `chmod` reverses it.
+
+Only the third group can lose or alter anything, and only after you agree to
+it.
 
 To satisfy yourself rather than take this on trust:
 
