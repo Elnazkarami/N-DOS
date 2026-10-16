@@ -1,5 +1,8 @@
 # NDOS: Neuroscience Data Organization System
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23167365.svg)](https://doi.org/10.5281/zenodo.23167365)
+[![PyPI](https://img.shields.io/pypi/v/ndos)](https://pypi.org/project/ndos/)
+
 **Make sense of animal neuroscience data you did not organise yourself.**
 
 A drive arrives. The person who filled it has graduated. Somewhere in it are
@@ -864,6 +867,28 @@ analyses derived from them.
 **Not in scope:** replacing BIDS for human MRI/MEG/EEG, replacing NWB as a
 container, or becoming a public archive. NDOS reads and hands off to those
 ecosystems rather than competing with them.
+
+---
+
+## Citing NDOS
+
+```bibtex
+@software{alikarami_ndos,
+  author    = {Alikarami, Elnaz},
+  title     = {{NDOS: recovering, describing and querying
+                pre-publication animal neuroscience data}},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23167365},
+  url       = {https://doi.org/10.5281/zenodo.23167365}
+}
+```
+
+That DOI resolves to the latest release. To cite the exact version you ran —
+which is what a methods section should do — use the one for that release;
+0.1.0 is [10.5281/zenodo.23167366](https://doi.org/10.5281/zenodo.23167366).
+`CITATION.cff` carries both, so GitHub's "Cite this repository" button is
+accurate too.
 
 ---
 

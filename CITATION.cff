@@ -6,6 +6,14 @@ authors:
   - family-names: Alikarami
     given-names: Elnaz
 repository-code: "https://github.com/Elnazkarami/N-DOS"
+doi: "10.5281/zenodo.23167366"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23167365"
+    description: "All versions of NDOS"
+  - type: doi
+    value: "10.5281/zenodo.23167366"
+    description: "Version 0.1.0"
 abstract: >-
   A toolkit for recovering, describing and querying pre-publication wet-lab and
   animal neuroscience data that was not organised to any standard. NDOS
@@ -26,3 +34,4 @@ keywords:
   - NWB
 license: Apache-2.0
 version: 0.1.0
+date-released: "2026-10-05"
