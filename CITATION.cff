@@ -6,7 +6,10 @@ authors:
   - family-names: Alikarami
     given-names: Elnaz
 repository-code: "https://github.com/Elnazkarami/N-DOS"
-doi: "10.5281/zenodo.23167366"
+# The concept DOI, which always resolves to the newest release. A
+# version-specific DOI cannot be named here before that version exists, so
+# this stays correct between releases rather than pointing at the wrong one.
+doi: "10.5281/zenodo.23167365"
 identifiers:
   - type: doi
     value: "10.5281/zenodo.23167365"
@@ -33,5 +36,6 @@ keywords:
   - BIDS
   - NWB
 license: Apache-2.0
-version: 0.1.0
+version: 0.2.0
+# Set when 0.2.0 is published; 0.1.0 was released 2026-10-05.
 date-released: "2026-10-05"

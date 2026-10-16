@@ -4,59 +4,144 @@
   "title": "NDOS Transfer Verification",
   "description": "The result of comparing a source manifest against a destination after a transfer. Three outcomes, because a comparison that found no mismatch has not necessarily verified anything: if a checksum was missing or a path could not be read, 'no mismatch' is the honest answer and 'verified' is not.",
   "type": "object",
-  "required": ["verify_version", "result", "counts", "source_root", "destination"],
+  "required": [
+    "verify_version",
+    "result",
+    "counts",
+    "source_root",
+    "destination"
+  ],
   "additionalProperties": false,
   "properties": {
-    "verify_version": { "const": "0.1" },
-    "generator": { "type": "string" },
-    "checked_at": { "type": "string", "format": "date-time" },
-    "source_root": { "type": "string" },
-    "destination": { "type": "string" },
+    "verify_version": {
+      "const": "0.1"
+    },
+    "generator": {
+      "type": "string"
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_root": {
+      "type": "string"
+    },
+    "destination": {
+      "type": "string"
+    },
     "strict_extra": {
       "type": "boolean",
       "description": "Whether files present at the destination but absent from the manifest were treated as a failure."
     },
     "result": {
-      "enum": ["VERIFIED", "FAILED", "INCONCLUSIVE"],
-      "description": "VERIFIED: every expected file matched by checksum (exit 0). FAILED: at least one file missing or definitely changed (exit 1). INCONCLUSIVE: no mismatch found and something could not be checked (exit 3)."
+      "enum": [
+        "VERIFIED",
+        "FAILED",
+        "INCONCLUSIVE"
+      ],
+      "description": "VERIFIED: every expected file matched by checksum (exit 0). FAILED: at least one file missing or definitely changed (exit 1). INCONCLUSIVE: no mismatch found and something could not be checked, including a manifest that records no files at all (exit 3)."
     },
     "counts": {
       "type": "object",
-      "required": ["source_files", "verified", "missing", "changed", "unverifiable"],
+      "required": [
+        "source_files",
+        "verified",
+        "missing",
+        "changed",
+        "unverifiable"
+      ],
       "additionalProperties": false,
       "properties": {
-        "source_files": { "type": "integer", "minimum": 0 },
-        "verified": { "type": "integer", "minimum": 0 },
-        "missing": { "type": "integer", "minimum": 0 },
-        "changed": { "type": "integer", "minimum": 0 },
-        "unverifiable": { "type": "integer", "minimum": 0 },
-        "unexpected": { "type": "integer", "minimum": 0 },
-        "incomplete_tool_directories": { "type": "integer", "minimum": 0 },
-        "records_left_behind": { "type": "integer", "minimum": 0 },
+        "source_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unverifiable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unexpected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_tool_directories": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "records_left_behind": {
+          "type": "integer",
+          "minimum": 0
+        },
         "modification_times_changed": {
-          "type": "integer", "minimum": 0,
+          "type": "integer",
+          "minimum": 0,
           "description": "Reported, never a failure: preserving bytes while changing mtimes is correct behaviour for a copy."
+        },
+        "excluded_from_scope": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Paths the scan was told to ignore. They do not affect the result -- they were never meant to travel -- but a transfer reported VERIFIED after excluding the recordings should say so."
         }
       }
     },
-    "missing": { "type": "array", "items": { "type": "string" } },
-    "unexpected": { "type": "array", "items": { "type": "string" } },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unexpected": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "records_left_behind": {
-      "type": "array", "items": { "type": "string" },
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
       "description": "Sidecars that did not arrive. The data is intact and what somebody decided about it is gone."
     },
     "changed": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "reason"],
+        "required": [
+          "path",
+          "reason"
+        ],
         "properties": {
-          "path": { "type": "string" },
-          "reason": { "type": "string" },
-          "expected": { "type": "string" },
-          "found": { "type": "string" },
-          "size_before": { "type": "integer" },
-          "size_after": { "type": "integer" }
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "found": {
+            "type": "string"
+          },
+          "size_before": {
+            "type": "integer"
+          },
+          "size_after": {
+            "type": "integer"
+          }
         }
       }
     },
@@ -64,10 +149,17 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "reason"],
+        "required": [
+          "path",
+          "reason"
+        ],
         "properties": {
-          "path": { "type": "string" },
-          "reason": { "type": "string" }
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
         }
       }
     },
@@ -76,16 +168,53 @@
       "description": "Missing files grouped by the tool directory they belong to. This reports a directory as incomplete relative to the manifest; it does not judge whether the tool's original output was itself complete.",
       "items": {
         "type": "object",
-        "required": ["directory", "tool", "missing", "source_file_count"],
+        "required": [
+          "directory",
+          "tool",
+          "missing",
+          "source_file_count"
+        ],
         "properties": {
-          "directory": { "type": "string" },
-          "tool": { "type": "string" },
-          "missing": { "type": "array", "items": { "type": "string" } },
-          "source_file_count": { "type": "integer", "minimum": 1 },
-          "verified": { "type": "integer", "minimum": 0 }
+          "directory": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_file_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "verified": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Files in this directory matched by checksum. Excludes missing, changed and unverifiable files, so it never overstates what was established."
+          },
+          "changed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Files in this directory that arrived with different contents. Counted separately from `verified`, which counts only checksum matches."
+          }
         }
       }
     },
-    "extensions": { "type": "object" }
+    "extensions": {
+      "type": "object"
+    },
+    "excluded_from_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The excluded paths, so the declared scope of the comparison is inspectable."
+    }
   }
 }
