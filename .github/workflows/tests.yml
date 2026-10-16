@@ -143,10 +143,16 @@ jobs:
           # Transfer verification: a clean copy verifies, a corrupted one fails
           # at the same size, and a manifest without hashes is inconclusive
           # rather than quietly successful.
-          python ndos_scan.py /tmp/fresh -o /tmp/before.json
-          cp -R /tmp/fresh /tmp/arrived
+          # Its own project, not /tmp/fresh: that one has had protect --apply
+          # run on it by an earlier step, so its files are read-only and the
+          # corruption below cannot write to the copy. Rehearsing this locally
+          # on a clean directory passed and CI did not.
+          python ndos_init.py /tmp/vsrc --subject M123 --date 2025-03-14
+          echo signal > /tmp/vsrc/raw_data/M123/20250314/M123_20250314_raw.dat
+          python ndos_scan.py /tmp/vsrc -o /tmp/before.json
+          cp -R /tmp/vsrc /tmp/arrived
           python ndos_verify.py /tmp/before.json /tmp/arrived
-          cp -R /tmp/fresh /tmp/corrupt
+          cp -R /tmp/vsrc /tmp/corrupt
           python - <<'PY'
           import pathlib
           target = next(pathlib.Path('/tmp/corrupt/raw_data').rglob('*.dat'))
@@ -154,7 +160,7 @@ jobs:
           target.write_bytes(bytes(data))
           PY
           python ndos_verify.py /tmp/before.json /tmp/corrupt; test $? -eq 1
-          python ndos_scan.py /tmp/fresh -o /tmp/nohash.json --no-checksum
+          python ndos_scan.py /tmp/vsrc -o /tmp/nohash.json --no-checksum
           python ndos_verify.py /tmp/nohash.json /tmp/arrived; test $? -eq 3
 
   install:
