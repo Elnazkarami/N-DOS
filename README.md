@@ -1,6 +1,6 @@
 # NDOS: Neuroscience Data Organization System
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23167365.svg)](https://doi.org/10.5281/zenodo.23167365)
+[![DOI](https://zenodo.org/badge/1044437034.svg)](https://doi.org/10.5281/zenodo.23167365)
 [![PyPI](https://img.shields.io/pypi/v/ndos)](https://pypi.org/project/ndos/)
 
 **Make sense of animal neuroscience data you did not organise yourself.**
@@ -153,13 +153,24 @@ to do about it.
 
 ## Safety guarantee
 
-`ndos_scan.py` and `ndos_report.py` **never modify, move, rename, extract, or
-delete anything** below the directory you point them at. They open files only
-to read bytes for checksums. This is verified by tests that snapshot every
-size and modification time before and after a scan.
+**Inspection commands do not alter the tree they inspect.** Commands that
+change source files or permissions require an explicit flag, show a plan and
+ask first. Output-producing commands write only where you tell them.
 
-Nothing in NDOS Core writes to your data without an explicit, reviewable plan
-that you approve first.
+That is tested, not asserted. `tests/test_read_only.py` records the path,
+size, modification time, mode and SHA-256 of every file in a project, runs
+fifteen inspection commands and both dry runs, and fails if a single value
+moved. The test was itself checked against a command that *does* write —
+`protect --apply` changes one file's mode and the snapshot catches it — so a
+green result means something.
+
+Two honest qualifications. `ndos prov run` wraps a command *you* supply and
+inherits whatever that command does; NDOS cannot promise your analysis script
+is read-only. And a command re-run with the same output path will replace its
+own previous output, which is the one thing it is allowed to overwrite.
+
+[RECIPES.md](https://github.com/Elnazkarami/N-DOS/blob/main/RECIPES.md)
+lists which commands fall in which of the three groups.
 
 ---
 
@@ -747,6 +758,63 @@ python3 ndos_init.py ~/projects/my-study
 
 ---
 
+### `ndos_verify.py` — did the transfer arrive intact?
+
+NDOS does not move data between machines. rsync, rclone, DataLad and
+datashuttle already do that well. What none of them tells you is whether what
+arrived is still *usable*.
+
+```bash
+ndos scan /source -o before.json     # checksums are on by default
+# ... move it with whatever you already use ...
+ndos verify before.json /destination
+```
+
+```
+Source files :       18
+Verified     :       17
+Missing      :        1
+Changed      :        0
+Unverifiable :        0
+
+RESULT: FAILED
+
+INCOMPLETE TOOL-NATIVE DIRECTORY (1)
+  Phy / Kilosort sorting: raw_data/M123/20250314/kilosort/
+      3 of 4 source files verified
+      missing: spike_times.npy
+```
+
+A sorting one file short is unopenable by Phy, and an ungrouped list of absent
+paths does not say so. Missing files are grouped by the tool directory they
+belong to, named by the tool that wrote it — reusing the markers
+`ndos organize` already matches on, so a directory treated as one payload
+when a layout is built is treated as one here. This reports a directory as
+incomplete *relative to the manifest*; it does not claim to judge whether the
+tool's original output was complete.
+
+**Three results, not two.**
+
+| | | |
+| --- | --- | --- |
+| `VERIFIED` | every expected file matched by checksum | exit 0 |
+| `FAILED` | at least one file missing or definitely changed | exit 1 |
+| `INCONCLUSIVE` | no mismatch found, and something could not be checked | exit 3 |
+
+The third is the one that matters. If the manifest carried no checksum for a
+file, or a path could not be read at either end, then "no mismatch detected"
+is the honest answer and "verified" is not — the same distinction `ndos query`
+makes between *excluded* and *cannot be ruled out*, applied to this tool's own
+output. A verifier that reported success when it had nothing to verify against
+would be the failure this project argues against.
+
+Files at the destination that are not in the manifest are reported, not
+failed — a transfer log is normal. `--strict-extra` makes them a failure.
+Modification times are reported where they differ and never fail: preserving
+bytes while changing mtimes is correct behaviour for a copy.
+
+---
+
 ## `ndos gui` — the same tools, in a window
 
 Not everyone in a lab works at a command line, and the person who knows what
@@ -842,6 +910,7 @@ additionally validates generated manifests against the published schema.
 | `ndos_convert.py` | BIDS and NWB handoff |
 | `ndos_init.py` | Start a project, and make a session folder |
 | `ndos_validate.py` | Check a project against the standard |
+| `ndos_verify.py` | Check a transferred dataset arrived intact |
 | `ndos_gui.py` | Serves the local interface, on this machine only |
 | `ndos_gui_static/` | That interface, already built, so no Node is needed |
 | `gui/` | Its source, for changing it — see [gui/README.md](https://github.com/Elnazkarami/N-DOS/blob/main/gui/README.md) |

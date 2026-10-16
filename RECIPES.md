@@ -182,11 +182,19 @@ Not unless you ran one of three specific commands and confirmed a prompt. The
 honest version has three categories, because "writes nothing" and "does not
 touch your data" are different claims and NDOS used to conflate them.
 
-**Reads your data and writes nothing at all**
-`report`, `scan` without `-o`, `archive inspect`, `archive search`,
-`archive plan`, `organize plan`, `tags list`, `tags get`, `query`, `prov list`,
-`prov trace`, `validate`, `convert` without `--write`, `search find`,
-`table check`, `protect --check`, `gui` — the interface is read-only.
+**Does not alter the source it inspects**
+`report`, `scan`, `archive inspect`, `archive search`, `archive plan`,
+`organize plan`, `tags list`, `tags get`, `query`, `prov list`, `prov trace`,
+`validate`, `convert` without `--write`, `search find`, `search index`,
+`table check`, `protect --check`, `verify`, `gui` — the interface is
+read-only.
+
+Not all of these write literally nothing: `archive inspect` saves a catalogue
+(`archives.json` unless you give `-c`), `scan -o` writes a manifest, and
+`search index` writes an index. They write where they are told and never into
+the data. That distinction is the guarantee worth making, because "writes
+nothing anywhere" was never true and claiming it invited someone to find the
+exception.
 
 **Writes new files, at a path you give it, never over your originals**
 `scan -o`, `table export`, `table check --emit`, `search index`,
@@ -196,12 +204,18 @@ touch your data" are different claims and NDOS used to conflate them.
 
 **Changes what is already on your disk — plan shown, confirmation required**
 `organize --mode move` moves your files instead of linking them.
+`organize undo` reverses an applied layout, and after a move that means
+putting your files back — use the log it wrote, never `rm`.
 `tags sweep --apply` deletes files, and never without listing them first.
-`protect --apply` makes raw data read-only; `protect --check` shows what it
-did, and `chmod` reverses it.
+`protect --apply` makes raw data read-only, and `protect --release` makes it
+writable again; `protect --check` reports the current state.
 
-Only the third group can lose or alter anything, and only after you agree to
-it.
+And one that cannot be categorised, because it depends on you:
+`prov run <your command>` executes the command you give it and records what
+happened. NDOS does not inspect that command and cannot promise it is
+read-only — if your script writes, wrapping it in `prov run` does not stop it.
+
+Only these can lose or alter your data, and only after you agree to it.
 
 To satisfy yourself rather than take this on trust:
 

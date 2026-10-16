@@ -37,6 +37,7 @@ COMMANDS: Tuple[Tuple[str, str, str], ...] = (
     ("query", "ndos_query", "Build a cohort, with the evidence behind each match"),
     ("search", "ndos_search", "Find a word in the notes, logs and tables on a drive"),
     ("prov", "ndos_prov", "Record what produced a result, and trace it back"),
+    ("verify", "ndos_verify", "Check that a transferred dataset arrived intact"),
     ("convert", "ndos_convert", "Hand off to BIDS and NWB workflows"),
     ("init", "ndos_init", "Start a project, and make a session folder"),
     ("validate", "ndos_validate", "Check a project against the N-DOS standard"),
