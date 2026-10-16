@@ -159,9 +159,16 @@ jobs:
           data = bytearray(target.read_bytes()); data[0] ^= 0xFF
           target.write_bytes(bytes(data))
           PY
-          python ndos_verify.py /tmp/before.json /tmp/corrupt; test $? -eq 1
+          # A non-zero exit is the expected result here, and `set -e` kills the
+          # script before `test $? -eq N` can read it. Capture it explicitly.
+          set +e
+          python ndos_verify.py /tmp/before.json /tmp/corrupt; corrupted=$?
           python ndos_scan.py /tmp/vsrc -o /tmp/nohash.json --no-checksum
-          python ndos_verify.py /tmp/nohash.json /tmp/arrived; test $? -eq 3
+          python ndos_verify.py /tmp/nohash.json /tmp/arrived; inconclusive=$?
+          set -e
+          echo "corrupted exited $corrupted (want 1), no-hash exited $inconclusive (want 3)"
+          test "$corrupted" -eq 1
+          test "$inconclusive" -eq 3
 
   install:
     name: optional pip install
