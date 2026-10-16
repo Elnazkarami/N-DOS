@@ -42,7 +42,7 @@ manifest, metadata sheets, a search index, a layout of symlinks, a BIDS export
 [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)
 states a directory structure, session shape, identifiers and data flags that a
 project can be checked against, and `ndos validate` reports whether one
-conforms. It is a practical convention rather than a rival to BIDS or NWB —
+conforms. It is a practical convention and complementary to BIDS or NWB —
 NDOS hands off to both — and it is deliberately separable from everything
 above, so a lab that has already chosen a layout can still use the rest.
 
