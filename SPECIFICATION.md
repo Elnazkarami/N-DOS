@@ -52,8 +52,16 @@ Data MUST be organised by subject and then session:
 raw_data/<SubjectID>/<SessionID>/
 ```
 
-Acquisition files MUST sit directly under `<SessionID>/`. They MUST NOT be
-placed in a further subdirectory of the implementation's choosing.
+Each acquisition payload MUST sit directly under `<SessionID>/`. A payload is
+either a single file or a directory written by an acquisition or analysis tool
+— a SpikeGLX run, a Kilosort sorting, an Open Ephys recording. The internal
+structure and filenames of such a directory MUST be left as the tool wrote
+them (§5); it counts as one payload, not as nested data.
+
+What this forbids is an implementation inventing a level of its own. A tool
+rebuilding a layout MUST NOT place acquisitions in a subdirectory it chose —
+`<SessionID>/raw/` rather than `<SessionID>/` — because the next tool then has
+to guess whether that level is the lab's or the last tool's.
 
 `processed_data/` SHOULD mirror the same shape:
 
@@ -290,6 +298,34 @@ since subject, session and acquisition are already explicit. Conversion is
 outside this specification, and N-DOS does not replace either.
 
 ---
+
+## Three things a project can be
+
+These are separate, and only the second is what `ndos validate` measures. The
+distinction matters because the most common reason not to adopt a standard is
+believing you must reorganise everything before it does anything for you.
+
+**N-DOS-readable** — NDOS can inventory it, search it, and answer questions
+about it in the organisation it already has. This requires nothing: no layout,
+no metadata, no permission to change anything. Every directory is readable.
+Most of what NDOS does is available at this level, which is where a lab with
+an inherited archive starts and may reasonably stay.
+
+**N-DOS-conformant** — the project satisfies every MUST in §1–§4: the
+directories, the subject-then-session shape, the identifier rules. This is
+what `ndos validate` reports and what the section below defines. A project
+becomes conformant when a lab chooses to, not in order to be read.
+
+**N-DOS-traceable** — conformant, and additionally records how its facts are
+known: metadata carrying the evidence statuses of §7, flags recording what has
+been checked (§6), and provenance linking a result to the inputs and code that
+produced it. This is the level at which a cohort selection can be defended and
+a figure traced to raw data.
+
+A project may be readable without being conformant, and conformant without
+being traceable. Nothing in NDOS requires climbing the ladder, and the tools
+do not withhold anything at the lower levels — a cohort query over a readable
+archive still reports what cannot be ruled out.
 
 ## Conformance
 
