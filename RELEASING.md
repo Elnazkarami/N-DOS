@@ -90,8 +90,12 @@ excluded: those scripts are superseded and should not travel with a release.
 ## After publishing
 
 - Confirm `pip install ndos` works from a clean environment.
-- If the release is meant to be citable, archive the tag on Zenodo and add the
-  DOI to `CITATION.cff` and the README.
+- Zenodo archives the release automatically once the repository is linked, so
+  a new version DOI appears on its own. Add it to `CITATION.cff`'s
+  `identifiers` list and set `date-released`. Leave the top-level `doi:` as
+  the concept DOI — it resolves to the newest release, and naming a version
+  DOI there before that version exists means `CITATION.cff` is wrong for the
+  whole gap between a bump and a release.
 
 ## About the DOI
 

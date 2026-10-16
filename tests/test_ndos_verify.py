@@ -280,5 +280,201 @@ class VerifyTests(unittest.TestCase):
         self.assertIn("verify", [name for name, _, _ in ndos.COMMANDS])
 
 
+class IntegrityOfTheVerifierTests(unittest.TestCase):
+    """The verifier is an integrity tool, so its own inputs have to be sound.
+
+    Every case here produced a confident-looking answer from a record that
+    could not support one.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.destination = self.tmp / "dest"
+        self.destination.mkdir()
+
+    def test_a_manifest_of_nothing_cannot_verify_a_transfer(self):
+        """It reported VERIFIED, which is the contradiction this is built on.
+
+        Reachable by scanning an empty mount, or by excluding everything.
+        """
+        result = ndos_verify.verify(
+            {"source_root": "/mnt/empty", "checksums": True, "files": []},
+            self.destination,
+        )
+        self.assertEqual(result["result"], INCONCLUSIVE)
+        self.assertIn("nothing to verify", result["unverifiable"][0]["reason"])
+
+    def test_a_path_appearing_twice_is_refused(self):
+        """One entry silently won, and the result did not say which."""
+        with self.assertRaises(ndos_verify.ManifestError) as caught:
+            ndos_verify.verify(
+                {"files": [
+                    {"path": "a.dat", "sha256": "a" * 64},
+                    {"path": "a.dat", "sha256": "b" * 64},
+                ]},
+                self.destination,
+            )
+        self.assertIn("twice", str(caught.exception))
+
+    def test_an_entry_without_a_path_is_refused_in_words(self):
+        """It raised a bare KeyError from inside the comparison."""
+        with self.assertRaises(ndos_verify.ManifestError):
+            ndos_verify.verify({"files": [{"size_bytes": 1}]}, self.destination)
+
+    def test_something_that_is_not_a_digest_is_refused(self):
+        with self.assertRaises(ndos_verify.ManifestError) as caught:
+            ndos_verify.verify(
+                {"files": [{"path": "a.dat", "sha256": "probably"}]},
+                self.destination,
+            )
+        self.assertIn("sha256", str(caught.exception))
+
+    def test_a_malformed_shape_is_refused(self):
+        for document in (
+            {"files": "not a list"},
+            {"files": [["not", "an", "object"]]},
+            {"files": [{"path": "a", "size_bytes": -1}]},
+            {"files": [{"path": "   "}]},
+        ):
+            with self.subTest(document=str(document)[:40]):
+                with self.assertRaises(ndos_verify.ManifestError):
+                    ndos_verify.verify(document, self.destination)
+
+    def test_a_manifest_version_it_cannot_read_is_refused(self):
+        with self.assertRaises(ndos_verify.ManifestError):
+            ndos_verify.verify(
+                {"manifest_version": "9.9", "files": []}, self.destination
+            )
+
+    def test_the_version_the_scanner_writes_is_accepted(self):
+        import ndos_scan
+
+        self.assertIn(
+            ndos_scan.MANIFEST_VERSION, ndos_verify.SUPPORTED_MANIFEST_VERSIONS
+        )
+
+    def test_a_refusal_exits_as_an_error_not_as_a_verdict(self):
+        manifest = self.tmp / "bad.json"
+        manifest.write_text(
+            json.dumps({"files": [{"path": "a"}, {"path": "a"}]}), encoding="utf-8"
+        )
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "ndos_verify.py"), str(manifest),
+             str(self.destination)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertNotIn("VERIFIED", result.stdout)
+
+
+class HonestReportingTests(unittest.TestCase):
+    """What the report claims has to match what was established."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.source = self.tmp / "source"
+        self.sorting = self.source / "raw_data" / "M1" / "20250101" / "kilosort"
+        self.sorting.mkdir(parents=True)
+        for name in ("params.py", "spike_times.npy", "spike_clusters.npy",
+                     "amplitudes.npy"):
+            (self.sorting / name).write_text(f"contents {name}\n", encoding="utf-8")
+
+        metadata = self.source / "metadata"
+        metadata.mkdir()
+        for name in ("animals.csv", "procedures.csv", "sessions.csv"):
+            (metadata / name).write_text("subject_id\nM1\n", encoding="utf-8")
+
+    def manifest(self):
+        return ndos_scan.scan(
+            self.source, include_checksums=True, progress=False, follow_symlinks=False
+        )
+
+    def copy(self):
+        import shutil
+
+        destination = self.tmp / "dest"
+        shutil.copytree(self.source, destination)
+        return destination
+
+    def test_a_corrupted_file_is_not_counted_as_verified(self):
+        """It said "3 of 4 verified" with one missing and one corrupted."""
+        before = self.manifest()
+        destination = self.copy()
+        sorting = destination / "raw_data" / "M1" / "20250101" / "kilosort"
+        (sorting / "spike_times.npy").unlink()
+        (sorting / "amplitudes.npy").write_text("CORRUPTED\n", encoding="utf-8")
+
+        result = ndos_verify.verify(before, destination)
+        group = next(g for g in result["incomplete"] if "kilosort" in g["directory"])
+        self.assertEqual(group["source_file_count"], 4)
+        self.assertEqual(len(group["missing"]), 1)
+        self.assertEqual(len(group["changed"]), 1)
+        self.assertEqual(group["verified"], 2, "a corrupted file counted as verified")
+
+        text = ndos_verify.render(result)
+        self.assertIn("2 of 4 source files verified", text)
+        self.assertIn("changed:", text)
+
+    def test_losing_a_metadata_table_is_reported_as_a_record_left_behind(self):
+        """Those three files are where the human decisions live."""
+        before = self.manifest()
+        destination = self.copy()
+        (destination / "metadata" / "animals.csv").unlink()
+
+        result = ndos_verify.verify(before, destination)
+        self.assertIn(
+            "animals.csv",
+            [Path(p).name for p in result["records_left_behind"]],
+        )
+
+    def test_all_three_tables_count_as_records(self):
+        for name in ("animals.csv", "procedures.csv", "sessions.csv"):
+            self.assertTrue(ndos_verify._is_sidecar(name), name)
+
+    def test_an_excluded_scope_is_stated_rather_than_implied(self):
+        """`--exclude '*.bin'` must not read as a clean bill of health."""
+        before = self.manifest()
+        before.setdefault("skipped", []).extend(
+            {"path": f"raw_data/M1/20250101/run{n}.bin", "reason": "excluded",
+             "detail": "matched an exclude pattern"}
+            for n in range(412)
+        )
+        result = ndos_verify.verify(before, self.copy())
+
+        self.assertEqual(result["result"], VERIFIED)
+        self.assertEqual(result["counts"]["excluded_from_scope"], 412)
+        text = ndos_verify.render(result)
+        self.assertIn("within the scope this manifest declares", text)
+        self.assertIn("412", text)
+
+    def test_the_closing_line_does_not_read_as_the_files_being_fine(self):
+        """"Nothing was changed at either end" sat under a CHANGED heading."""
+        before = self.manifest()
+        destination = self.copy()
+        target = destination / "raw_data" / "M1" / "20250101" / "kilosort" / "params.py"
+        target.write_text("CORRUPTED\n", encoding="utf-8")
+
+        text = ndos_verify.render(ndos_verify.verify(before, destination))
+        self.assertNotIn("Nothing was changed", text)
+        self.assertIn("NDOS did not modify either location", text)
+        self.assertIn("Re-copy", text)
+
+    def test_inconclusive_is_not_told_to_re_copy(self):
+        """Re-copying does not supply checksums the manifest never had."""
+        before = ndos_scan.scan(
+            self.source, include_checksums=False, progress=False, follow_symlinks=False
+        )
+        text = ndos_verify.render(ndos_verify.verify(before, self.copy()))
+        self.assertIn("Re-copying will not resolve this", text)
+        self.assertIn("ndos scan", text)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

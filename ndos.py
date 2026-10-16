@@ -22,7 +22,7 @@ import importlib
 import sys
 from typing import Dict, List, Tuple
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 #: Subcommand, module, and the one line shown by `ndos --help`. Ordered the way
 #: the work runs: understand, structure, describe, use, hand off.
