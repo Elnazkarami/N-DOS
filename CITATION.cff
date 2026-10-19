@@ -15,6 +15,9 @@ identifiers:
     value: "10.5281/zenodo.23167365"
     description: "All versions of NDOS"
   - type: doi
+    value: "10.5281/zenodo.23476597"
+    description: "Version 0.2.0"
+  - type: doi
     value: "10.5281/zenodo.23167366"
     description: "Version 0.1.0"
 abstract: >-
@@ -37,5 +40,4 @@ keywords:
   - NWB
 license: Apache-2.0
 version: 0.2.0
-# Set when 0.2.0 is published; 0.1.0 was released 2026-10-05.
-date-released: "2026-10-05"
+date-released: "2026-10-16"
