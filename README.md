@@ -955,9 +955,10 @@ ecosystems rather than competing with them.
 
 That DOI resolves to the latest release. To cite the exact version you ran —
 which is what a methods section should do — use the one for that release;
-0.1.0 is [10.5281/zenodo.23167366](https://doi.org/10.5281/zenodo.23167366).
-`CITATION.cff` carries both, so GitHub's "Cite this repository" button is
-accurate too.
+0.2.0 is [10.5281/zenodo.23476597](https://doi.org/10.5281/zenodo.23476597),
+and 0.1.0 is [10.5281/zenodo.23167366](https://doi.org/10.5281/zenodo.23167366).
+`CITATION.cff` carries every released version, so GitHub's "Cite this
+repository" button is accurate too.
 
 ---
 
