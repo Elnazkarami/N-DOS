@@ -630,10 +630,38 @@ def derive(
             subject_and_session_from_name(name)
         )
 
+        # Where the filename and the folders both name a subject and name
+        # different ones, a rule decides -- and the rule used to decide in
+        # silence. The plan said which claim was taken and never that another
+        # had been rejected, so a reader could not tell a clean read from a
+        # resolved disagreement. Reported by a user on Neurostars; see #35.
+        conflict = None
+        if named_subject:
+            folder_subject, _ = _find_subject(directories)
+            if folder_subject and folder_subject != named_subject:
+                conflict = {
+                    "field": "subject",
+                    "taken": named_subject,
+                    "taken_from": "filename",
+                    "rejected": folder_subject,
+                    "rejected_from": "folder",
+                    "rule": (
+                        "the filename is more specific than the folders around "
+                        "it: a session archived as one file usually sits under "
+                        "its cohort, so trusting the folder would label every "
+                        "animal with its group"
+                    ),
+                }
+
         forced_subject = _at_depth(directories, subject_depth)
         if forced_subject is not None:
             subject = forced_subject
             subject_reason = f"folder {forced_subject!r} at level {subject_depth}, as you specified"
+            if conflict and forced_subject != named_subject:
+                conflict = {**conflict, "taken": forced_subject,
+                            "taken_from": f"level {subject_depth}, as you specified",
+                            "rejected": named_subject, "rejected_from": "filename",
+                            "rule": "you gave an explicit depth, which overrides both"}
         elif named_subject:
             subject, subject_reason = named_subject, named_reason
         else:
@@ -678,6 +706,7 @@ def derive(
                 "subject": subject,
                 "session": session,
                 "role": role,
+                "conflict": conflict,
                 "reasons": [
                     reason for reason in (subject_reason, session_reason, role_reason)
                     if reason
@@ -800,6 +829,7 @@ def derive(
                     "tool_output": tool_outputs[owner],
                     "placed": not target.startswith(f"{FLAGGED}/"),
                     "why": reasons,
+                    "conflict": item.get("conflict"),
                 }
             )
             continue
@@ -852,6 +882,7 @@ def derive(
                 "temporary": temporary,
                 "placed": not target.startswith(f"{FLAGGED}/"),
                 "why": reasons,
+                    "conflict": item.get("conflict"),
             }
         )
     return placements
@@ -949,6 +980,7 @@ def build_plan(
                 "tool_output": placement.get("tool_output"),
                 "placed": placement["placed"],
                 "why": placement["why"],
+                "conflict": placement.get("conflict"),
             }
         )
 
@@ -1272,8 +1304,38 @@ def render_plan(
         add(f"      from  {Path(action['source']).name}")
         for reason in action["why"]:
             add(f"      why   {reason}")
+        conflict = action.get("conflict")
+        if conflict:
+            # Two sources named a subject and named different ones. The rule
+            # that chose between them is sound, but applying it in silence
+            # let a resolved disagreement look like a clean read.
+            add(
+                f"      !     {conflict['rejected_from']} says "
+                f"{conflict['rejected']!r}, {conflict['taken_from']} says "
+                f"{conflict['taken']!r} — took {conflict['taken']!r}"
+            )
+            add(f"            because {conflict['rule']}")
     if plan["placed_count"] > len(shown):
         add(f"  ... and {plan['placed_count'] - len(shown):,} more")
+
+    conflicts = [a for a in plan["actions"] if a.get("conflict")]
+    if conflicts:
+        add("")
+        add("-" * 72)
+        add(f"SOURCES THAT DISAGREED ({len(conflicts)})")
+        add("-" * 72)
+        add("  Two sources named a subject and named different ones. A rule")
+        add("  chose, and these are the files where it had to. Worth reading if")
+        add("  the rule chose wrongly for your layout.")
+        for action in conflicts[:limit]:
+            conflict = action["conflict"]
+            add(f"  {action['relative_target']}")
+            add(
+                f"      {conflict['taken_from']}: {conflict['taken']!r}   "
+                f"(rejected {conflict['rejected_from']}: {conflict['rejected']!r})"
+            )
+        if len(conflicts) > limit:
+            add(f"  ... and {len(conflicts) - limit:,} more")
 
     tools: Dict[str, int] = {}
     for action in plan["actions"]:
