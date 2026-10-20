@@ -812,5 +812,105 @@ class ImagingAndHistologyTypeTests(unittest.TestCase):
         self.assertNotIn("imaging", ndos_convert.BIDS_DATATYPE)
 
 
+class ConflictingSourceTests(unittest.TestCase):
+    """When the filename and the folders name different subjects.
+
+    Reported by a user on Neurostars: can a disagreement be flagged rather
+    than resolved automatically? It was being resolved automatically and in
+    silence -- the plan named the claim it took and never said another had
+    been rejected, so a resolved conflict looked exactly like a clean read.
+
+    The precedence itself is not the bug and is unchanged: a session archived
+    as one file usually sits under its cohort folder, so the filename is the
+    more specific source. Saying nothing about it was the bug.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _plan(self, relative):
+        import ndos_organize
+        import ndos_scan
+
+        source = self.root / "source"
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"signal")
+        manifest = ndos_scan.scan(source, include_checksums=False, progress=False)
+        return ndos_organize.build_plan(manifest, self.root / "project")
+
+    def test_a_disagreement_is_recorded_on_the_action(self):
+        plan = self._plan("M456/ses-01/A3302-190809.dat")
+        conflicts = [a for a in plan["actions"] if a.get("conflict")]
+        self.assertEqual(len(conflicts), 1)
+
+        conflict = conflicts[0]["conflict"]
+        self.assertEqual(conflict["taken"], "A3302")
+        self.assertEqual(conflict["taken_from"], "filename")
+        self.assertEqual(conflict["rejected"], "M456")
+        self.assertEqual(conflict["rejected_from"], "folder")
+        self.assertIn("more specific", conflict["rule"])
+
+    def test_the_precedence_itself_is_unchanged(self):
+        """The filename still wins. Only the silence was the bug."""
+        plan = self._plan("M456/ses-01/A3302-190809.dat")
+        placed = [a for a in plan["actions"] if a["placed"]]
+        self.assertTrue(any(a["subject"] == "A3302" for a in placed))
+
+    def test_the_rejected_claim_is_named_in_the_rendered_plan(self):
+        import ndos_organize
+
+        text = ndos_organize.render_plan(self._plan("M456/ses-01/A3302-190809.dat"))
+        self.assertIn("SOURCES THAT DISAGREED", text)
+        self.assertIn("M456", text, "the rejected claim vanished from the output")
+        self.assertIn("A3302", text)
+
+    def test_sources_that_agree_produce_no_conflict(self):
+        """Otherwise every ordinary file would carry a warning."""
+        plan = self._plan("A3302/ses-01/A3302-190809.dat")
+        self.assertEqual([a for a in plan["actions"] if a.get("conflict")], [])
+
+        import ndos_organize
+
+        self.assertNotIn("DISAGREED", ndos_organize.render_plan(plan))
+
+    def test_a_filename_that_claims_nothing_is_not_a_conflict(self):
+        """`M123_20250314_raw.dat` does not name an animal to this parser.
+
+        My first attempt at reproducing this used exactly that filename and
+        concluded the folder wins, which was wrong: there was only ever one
+        claim. Worth pinning so the distinction is not lost again.
+        """
+        import ndos_organize
+
+        self.assertEqual(
+            ndos_organize.subject_and_session_from_name("M123_20250314_raw.dat")[0],
+            None,
+        )
+        plan = self._plan("M456/ses-01/M123_20250314_raw.dat")
+        self.assertEqual([a for a in plan["actions"] if a.get("conflict")], [])
+
+    def test_an_explicit_depth_overrides_both_and_says_so(self):
+        import ndos_organize
+        import ndos_scan
+
+        source = self.root / "source"
+        path = source / "M456" / "ses-01" / "A3302-190809.dat"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"signal")
+        manifest = ndos_scan.scan(source, include_checksums=False, progress=False)
+        plan = ndos_organize.build_plan(
+            manifest, self.root / "project", subject_depth=0
+        )
+        conflicts = [a for a in plan["actions"] if a.get("conflict")]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["conflict"]["taken"], "M456")
+        self.assertIn("you gave an explicit depth", conflicts[0]["conflict"]["rule"])
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
