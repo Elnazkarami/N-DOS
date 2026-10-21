@@ -622,6 +622,7 @@ def check_metadata(directory: Path) -> Dict[str, Any]:
         _cell(row, "subject_id") for row in animals if _cell(row, "subject_id")
     }
     references: List[Dict[str, Any]] = []
+    contradictions: List[Dict[str, Any]] = []
 
     for index, row in enumerate(sessions, start=2):
         subject = _cell(row, "subject_id")
@@ -633,6 +634,31 @@ def check_metadata(directory: Path) -> Dict[str, Any]:
                     "message": (
                         f"session names subject {subject!r}, which has no row in "
                         f"{ANIMALS_FILE}"
+                    ),
+                }
+            )
+
+        # A declared subject that contradicts the folder the data sits in.
+        # Referential integrity does not catch this: when both animals have a
+        # row, every link is valid and the identity is still wrong -- the
+        # check reported no problems and called the row ready to use. Raised
+        # by a user on Neurostars, who named this exact case.
+        observed = _cell(row, "observed_folder_subject")
+        if subject and observed and subject != observed:
+            path = _cell(row, "observed_path") or "this session"
+            known_note = (
+                "" if observed in known
+                else f" ({observed!r} has no row in {ANIMALS_FILE} either)"
+            )
+            contradictions.append(
+                {
+                    "file": SESSIONS_FILE,
+                    "line": index,
+                    "message": (
+                        f"declared subject {subject!r} contradicts the folder "
+                        f"the data is in, which says {observed!r}: {path}"
+                        f"{known_note}. One of the two is wrong, and NDOS "
+                        f"cannot tell which"
                     ),
                 }
             )
@@ -660,6 +686,15 @@ def check_metadata(directory: Path) -> Dict[str, Any]:
             )
 
     result["references"] = references
+    result["contradictions"] = contradictions
+    # A row whose identity two sources disagree about is not "ready to use",
+    # and the headline count saying `Problems: 0` over a contradiction was
+    # the part that made this invisible.
+    contradicted = {c["line"] for c in contradictions}
+    if contradicted:
+        result["complete_rows"] = max(
+            0, result["complete_rows"] - len(contradicted)
+        )
     result["counts"] = {
         "animals": len(animals),
         "procedures": len(procedures),
@@ -759,6 +794,14 @@ def render_check(result: Dict[str, Any]) -> str:
         f"({(100 * result['complete_rows'] / total) if total else 0:.0f}%)"
     )
     add(f"Problems        : {len(result['problems'])}")
+    if result.get("contradictions"):
+        # Kept on its own line rather than folded into Problems: these are a
+        # different kind of fault, and a reader who sees "Problems: 0" over a
+        # contradicted identity has been told the wrong thing.
+        add(
+            f"Disagreements   : {len(result['contradictions'])}"
+            "  (two records describing the same session do not match)"
+        )
     add("")
     add(
         "A row is ready when "
@@ -805,6 +848,19 @@ def render_check(result: Dict[str, Any]) -> str:
                 f"  {problem['file']} line {problem['line']:<4} "
                 f"{problem['column']:<18} {problem['value']!r}"
             )
+            add(f"        {problem['message']}")
+
+    if result.get("contradictions"):
+        add("")
+        add("-" * 72)
+        add("SOURCES THAT DISAGREE")
+        add("-" * 72)
+        add("  Two records describe the same session and do not match. Every")
+        add("  link can be valid and the identity still be wrong, so this is")
+        add("  not a broken reference -- it is a disagreement only a person")
+        add("  can settle.")
+        for problem in result["contradictions"]:
+            add(f"  {problem['file']} line {problem['line']}")
             add(f"        {problem['message']}")
 
     if result.get("references"):
@@ -1092,6 +1148,10 @@ def command_check(args: argparse.Namespace) -> int:
         + result["animals"]["problems"]
         + result["procedures"]["problems"]
         + result["references"]
+        # A contradicted identity makes the row untrustworthy, so it has to
+        # reach the exit code and gate --emit like anything else. Reporting it
+        # in the text while exiting 0 would leave a script none the wiser.
+        + result.get("contradictions", [])
     )
 
     if args.emit:
