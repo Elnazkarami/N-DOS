@@ -88,7 +88,10 @@ Treating either as "not a mouse" biases the cohort towards whichever animals
 happened to have fuller records, and says nothing about having done so.
 
 Why each animal lands where it does is spelled out in
-[examples/cohort-demo/](examples/cohort-demo/). A test regenerates that output
+[examples/cohort-demo/](examples/cohort-demo/). A second worked example,
+[examples/conflicting-records/](examples/conflicting-records/), shows what
+happens when two records disagree about whose data a session is — the case
+where every link is valid and the identity is still wrong. A test regenerates that output
 and fails if it drifts, so what you just read is what the code does.
 
 To run it yourself — the example ships in the repository, so clone rather than
@@ -360,6 +363,28 @@ raw_data/A0634/20201122/0.avi
     why   imaging and video is treated as raw_data
 ```
 
+**And when two sources disagree, it says which one it overruled.** A file
+whose name claims one animal, inside a folder claiming another, is not a
+clean read — but it used to look like one, because the plan named the claim
+it took and never that another had been rejected:
+
+```
+raw_data/A3302/20190809/A3302_20190809_a3302-190809.dat
+    why   filename 'A3302-190809.dat' names the animal and the date
+    !     folder says 'M456', filename says 'A3302' — took 'A3302'
+          because the filename is more specific than the folders around it…
+
+SOURCES THAT DISAGREED (1)
+  raw_data/A3302/20190809/A3302_20190809_a3302-190809.dat
+      filename: 'A3302'   (rejected folder: 'M456')
+```
+
+The precedence itself is unchanged, and has a reason: a session archived as
+one file usually sits under its cohort, so trusting the folder would label
+every animal with its group. What changed is that the rule is now printed
+rather than merely applied. The rejected claim is in the saved plan too, so
+the decision can be revisited by someone who was not there when it was made.
+
 Structure is read from directory names, from filenames when the folders are
 silent (`2020_11_20.zip` carries its date nowhere else), and from compound
 names like `A0634_201122_183220`.
@@ -393,6 +418,15 @@ appearing under invented names as though they were distinct.
 Scanning reveals what is on disk. It cannot reveal which animal a recording
 came from, what was injected, or when. That knowledge lives in a notebook or
 an Excel sheet, so NDOS meets it there.
+
+`ndos table check` also reports where what you entered contradicts where the
+data sits — a session declaring `subject_id = M123` while filed under
+`raw_data/M456/`. Referential integrity does not catch this: when both
+animals have a row, every link is valid and the identity is still wrong.
+Such a row stops counting as ready to use, `--strict` fails on it, and
+`--emit` refuses to write `linked.json` out of metadata whose identity is
+disputed. The message says NDOS cannot tell which of the two is wrong,
+because it cannot.
 
 ```bash
 python3 ndos_table.py export manifest.json -d metadata/   # build the sheets

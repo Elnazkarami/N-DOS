@@ -1,0 +1,3 @@
+subject_id,species,strain,sex,date_of_birth,genotype,source,notes
+M201,mus musculus,C57BL/6J,F,2024-09-01,WT,Jackson,
+M202,mus musculus,C57BL/6J,M,2024-09-01,WT,Jackson,
