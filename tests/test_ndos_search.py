@@ -5,6 +5,7 @@ It is whether a word a researcher remembers leads to the data it describes,
 and whether a hit is honest about how it is known.
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -658,6 +659,128 @@ class TagTests(unittest.TestCase):
         self.assertEqual(
             result["name_match_count"],
             sum(entry["file_count"] for entry in result["directories"]),
+        )
+
+
+class DisagreementTests(unittest.TestCase):
+    """A document that sits under one animal and names only others.
+
+    Last part of the Neurostars report. Search already put both claims next
+    to each other; it was not calling the disagreement a disagreement, so
+    nothing marked it, counted it, or survived into the JSON.
+
+    The rule is narrower than "mentions somebody else": a cohort log listing
+    several animals including its own subject is a cohort log, not a
+    contradiction.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.lab = self.root / "lab"
+        for subject in ("M456", "M789"):
+            (self.lab / "raw_data" / subject / "20250314").mkdir(parents=True)
+        metadata = self.lab / "metadata"
+        metadata.mkdir()
+        (metadata / ndos_table.ANIMALS_FILE).write_text(
+            "subject_id,species,strain,sex,date_of_birth,genotype,source,notes\n"
+            "M123,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,\n"
+            "M456,mus musculus,C57BL/6J,M,2024-11-01,WT,Jackson,\n"
+            "M789,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,\n",
+            encoding="utf-8",
+        )
+        (metadata / ndos_table.SESSIONS_FILE).write_text(
+            "ndos_id,observed_path,observed_file_count,observed_bytes,subject_id,"
+            "session_date,session_type,task,qc_status,notes\n"
+            "ndos-a,raw_data/M456/20250314,1,55,M456,2025-03-14,surgery,,,\n",
+            encoding="utf-8",
+        )
+        self.index = self.root / "i.db"
+
+    def _write(self, subject, name, text):
+        path = self.lab / "raw_data" / subject / "20250314" / name
+        path.write_text(text, encoding="utf-8")
+
+    def _find(self, query="CA1"):
+        ndos_search.build(self.lab, self.index, quiet=True)
+        return ndos_search.find(self.index, query)
+
+    def test_a_document_naming_only_another_animal_is_flagged(self):
+        self._write("M456", "surgery_notes.txt",
+                    "Surgery log. Injected M123 in dorsal CA1.\n")
+        result = self._find()
+        hit = next(h for h in result["hits"] if "surgery_notes" in h["path"])
+        self.assertTrue(hit["disagrees"])
+        self.assertEqual(result["disagreement_count"], 1)
+
+    def test_a_cohort_log_naming_its_own_subject_is_not_flagged(self):
+        """The counterexample that makes the rule non-trivial.
+
+        Naming other animals is normal. Naming others *and not itself* is
+        what suggests the file is filed under the wrong one.
+        """
+        self._write("M789", "cohort.txt",
+                    "Cohort for CA1 study: M789, M123, M456. Ran together.\n")
+        result = self._find()
+        hit = next(h for h in result["hits"] if "cohort" in h["path"])
+        self.assertEqual(hit["mentions"], ["M123", "M456", "M789"])
+        self.assertFalse(hit["disagrees"], "a cohort log was called a conflict")
+        self.assertEqual(result["disagreement_count"], 0)
+
+    def test_a_document_naming_nobody_is_not_flagged(self):
+        self._write("M456", "plain.txt", "Rig 2. CA1 recording, clean.\n")
+        result = self._find()
+        hit = next(h for h in result["hits"] if "plain" in h["path"])
+        self.assertFalse(hit["disagrees"])
+
+    def test_a_document_outside_any_subject_folder_is_not_flagged(self):
+        """With no path subject there is nothing for the text to contradict."""
+        (self.lab / "surgery_log.txt").write_text(
+            "Injected M123 in dorsal CA1.\n", encoding="utf-8"
+        )
+        result = self._find()
+        hit = next(h for h in result["hits"] if "surgery_log" in h["path"])
+        self.assertEqual(hit["subject"], "")
+        self.assertFalse(hit["disagrees"])
+
+    def test_the_marker_names_both_claims(self):
+        self._write("M456", "surgery_notes.txt",
+                    "Surgery log. Injected M123 in dorsal CA1.\n")
+        text = ndos_search.render_find(self._find())
+        self.assertIn("sits under M456, names M123", text)
+        self.assertIn("sources disagree", text)
+
+    def test_the_count_is_stated_before_the_results(self):
+        """Finding these by reading every result is not finding them."""
+        self._write("M456", "surgery_notes.txt",
+                    "Surgery log. Injected M123 in dorsal CA1.\n")
+        text = ndos_search.render_find(self._find())
+        header = text.split("FILES WHOSE NAME")[0]
+        self.assertIn("1 result sits under one animal", header)
+
+    def test_it_survives_into_the_json(self):
+        """So the decision can be revisited by someone who was not there."""
+        self._write("M456", "surgery_notes.txt",
+                    "Surgery log. Injected M123 in dorsal CA1.\n")
+        result = self._find()
+        restored = json.loads(json.dumps(result))
+        self.assertEqual(restored["disagreement_count"], 1)
+        self.assertTrue(
+            any(h["disagrees"] for h in restored["hits"])
+        )
+
+    def test_the_three_commands_describe_it_the_same_way(self):
+        """organize, table check and search should not each invent wording."""
+        import ndos_organize
+        import ndos_table
+
+        for module in (ndos_organize, ndos_table):
+            source = Path(module.__file__).read_text(encoding="utf-8")
+            self.assertIn("DISAGREE", source, module.__name__)
+        self.assertIn(
+            "disagree", Path(ndos_search.__file__).read_text(encoding="utf-8")
         )
 
 

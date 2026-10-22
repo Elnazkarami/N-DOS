@@ -812,6 +812,14 @@ def find(
             animals = list(
                 dict.fromkeys(mentions + ([row["subject"]] if row["subject"] else []))
             )
+            # The document sits under one animal's folder and names others
+            # without naming that one. A log listing a whole cohort including
+            # its own subject is not a disagreement -- it is a log listing a
+            # cohort -- so the test is that the path's subject is absent from
+            # the text, not merely that others are present.
+            disagrees = bool(
+                row["subject"] and mentions and row["subject"] not in mentions
+            )
             hits.append({
                 "kind": row["kind"],
                 "evidence": row["evidence"],
@@ -820,6 +828,7 @@ def find(
                 "subject": row["subject"],
                 "session": row["session"],
                 "mentions": mentions,
+                "disagrees": disagrees,
                 "tags": [tag for tag in (row["tags"] or "").split(",") if tag],
                 "snippet": " ".join(row["snippet"].split()),
                 "score": round(-row["score"], 3),
@@ -834,6 +843,7 @@ def find(
             "match_count": len(hits),
             "limit": limit,
             "hits": hits,
+            "disagreement_count": sum(1 for hit in hits if hit.get("disagrees")),
             "name_match_count": len(named),
             "name_matches_capped": len(named) >= NAME_MATCH_CAP,
             "directories": directories,
@@ -900,6 +910,16 @@ def render_find(result: Dict[str, Any]) -> str:
             "  No exact match, so this searched for words starting with it: "
             + result["expression"]
         )
+    if result.get("disagreement_count"):
+        # Counted up front: on a drive with many of these, finding them by
+        # reading every result is not finding them.
+        count = result["disagreement_count"]
+        phrase = (
+            f"{count} results sit under one animal and name only others"
+            if count > 1
+            else "1 result sits under one animal and names only others"
+        )
+        lines.append(f"  {phrase} — marked ! below.")
 
     if result["directories"]:
         total = result["name_match_count"]
@@ -952,6 +972,15 @@ def render_find(result: Dict[str, Any]) -> str:
                 trail.append("names " + ", ".join(hit["mentions"]))
             if hit["tags"]:
                 trail.append("flagged " + ", ".join(hit["tags"]))
+            if trail:
+                lines.append("      " + " · ".join(trail))
+                trail = []
+            if hit.get("disagrees"):
+                lines.append(
+                    f"      !     sits under {hit['subject']}, names "
+                    + ", ".join(hit["mentions"])
+                    + " — sources disagree about whose data this is"
+                )
             if trail:
                 lines.append("      " + " · ".join(trail))
             lines.append(f"      {hit['evidence']}, from {hit['kind']}")

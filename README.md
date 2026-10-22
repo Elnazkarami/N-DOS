@@ -652,6 +652,12 @@ finds nothing exactly is retried as a prefix — lab vocabulary is full of
 suffixed names like `GCaMP6f`, which is one token to a search engine — and it
 tells you when it did that.
 
+A hit that sits under one animal's folder and names only *other* animals is
+marked and counted — the file may be filed under the wrong subject. A log
+naming several animals including its own is not: that is a cohort log, not a
+contradiction. `ndos organize` and `ndos table check` report the same kind of
+disagreement in their own outputs, in the same words.
+
 **Search ranks; it does not decide.** A document mentioning CA1 does not
 establish that a session targeted it. To select sessions on recorded evidence —
 and to see which ones *cannot be ruled out* — use `ndos query`. The output says
