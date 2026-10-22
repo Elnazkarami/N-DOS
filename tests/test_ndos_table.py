@@ -711,3 +711,92 @@ class SharedIdentificationTests(unittest.TestCase):
         # Both files belong to one session, as before.
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["observed_file_count"], 2)
+
+
+class ContradictedIdentityTests(unittest.TestCase):
+    """A declared subject that disagrees with the folder the data sits in.
+
+    Raised on Neurostars, and the reporter named the case that isolates it:
+    put *both* animals in animals.csv. Referential integrity then passes --
+    every link is valid -- and the identity is still wrong. Before this, the
+    check reported `Problems: 0` and called the row "Ready to use: 100%".
+    """
+
+    ANIMALS = (
+        "subject_id,species,strain,sex,date_of_birth,genotype,source,notes\n"
+        "M123,mus musculus,C57BL/6J,F,2024-11-01,WT,Jackson,\n"
+        "M456,mus musculus,C57BL/6J,M,2024-11-01,WT,Jackson,\n"
+    )
+    HEADER = (
+        "ndos_id,observed_path,observed_folder_subject,observed_folder_session,"
+        "observed_match,observed_file_count,observed_bytes,observed_modalities,"
+        "observed_earliest,observed_latest,subject_id,session_date,session_type,"
+        "task,qc_status,notes\n"
+    )
+
+    def _metadata(self, declared, observed="M456"):
+        directory = Path(self._tmp.name) / "metadata"
+        directory.mkdir(exist_ok=True)
+        (directory / ndos_table.ANIMALS_FILE).write_text(self.ANIMALS, encoding="utf-8")
+        (directory / ndos_table.PROCEDURES_FILE).write_text(
+            "procedure_id,subject_id,procedure_date,procedure_type,target_region,"
+            "construct_or_drug,dose,notes\n",
+            encoding="utf-8",
+        )
+        (directory / ndos_table.SESSIONS_FILE).write_text(
+            self.HEADER
+            + f"ndos-aaa,raw_data/{observed}/20250314,{observed},20250314,"
+            f"subject and session,12,640,Electrophysiology,2025-03-14,2025-03-14,"
+            f"{declared},2025-03-14,electrophysiology,alternation,pass,\n",
+            encoding="utf-8",
+        )
+        return directory
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_both_animals_existing_does_not_hide_the_contradiction(self):
+        """The case the reporter named. Every link valid, identity wrong."""
+        result = ndos_table.check_metadata(self._metadata("M123"))
+
+        self.assertEqual(result["references"], [], "a link was broken; wrong case")
+        self.assertEqual(len(result["contradictions"]), 1)
+        message = result["contradictions"][0]["message"]
+        self.assertIn("M123", message)
+        self.assertIn("M456", message)
+
+    def test_a_contradicted_row_is_not_counted_as_ready_to_use(self):
+        """It reported 100% ready over a session whose identity is disputed."""
+        result = ndos_table.check_metadata(self._metadata("M123"))
+        self.assertEqual(result["complete_rows"], 0)
+
+    def test_the_disagreement_is_not_filed_as_a_broken_link(self):
+        """Different faults: one is a missing row, one is two rows disagreeing."""
+        result = ndos_table.check_metadata(self._metadata("M123"))
+        text = ndos_table.render_check(result)
+        self.assertIn("SOURCES THAT DISAGREE", text)
+        self.assertIn("Disagreements", text)
+
+    def test_agreement_produces_nothing(self):
+        result = ndos_table.check_metadata(self._metadata("M456"))
+        self.assertEqual(result["contradictions"], [])
+        self.assertEqual(result["complete_rows"], 1)
+        self.assertNotIn("DISAGREE", ndos_table.render_check(result))
+
+    def test_an_absent_observed_subject_is_not_a_contradiction(self):
+        """Nothing to disagree with when the folder named no subject."""
+        result = ndos_table.check_metadata(self._metadata("M123", observed=""))
+        self.assertEqual(result["contradictions"], [])
+
+    def test_a_contradiction_also_naming_an_unknown_animal_says_both(self):
+        directory = self._metadata("M999")
+        result = ndos_table.check_metadata(directory)
+        self.assertEqual(len(result["contradictions"]), 1)
+        self.assertEqual(len(result["references"]), 1, "the broken link still reports")
+
+
+
+
+if __name__ == "__main__":
+    unittest.main()
