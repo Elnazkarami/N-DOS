@@ -1,0 +1,2 @@
+procedure_id,subject_id,procedure_date,procedure_type,target_region,construct_or_drug,dose,notes
+P01,M201,2025-01-10,injection,dorsal CA1,AAV9-GCaMP6f,300nl,

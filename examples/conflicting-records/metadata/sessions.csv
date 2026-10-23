@@ -1,0 +1,3 @@
+ndos_id,observed_path,observed_folder_subject,observed_folder_session,observed_match,observed_file_count,observed_bytes,observed_modalities,observed_earliest,observed_latest,subject_id,session_date,session_type,task,qc_status,notes
+ndos-c001,raw_data/M201/20250210,M201,20250210,subject and session,24,1048576,Electrophysiology,2025-02-10,2025-02-10,M201,2025-02-10,electrophysiology,alternation,pass,
+ndos-c002,raw_data/M202/20250211,M202,20250211,subject and session,24,1048576,Electrophysiology,2025-02-11,2025-02-11,M201,2025-02-11,electrophysiology,alternation,pass,typed the wrong animal

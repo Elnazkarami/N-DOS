@@ -91,5 +91,50 @@ class CohortDemoTests(unittest.TestCase):
             self.assertIn("CANNOT BE RULED OUT", query.stdout)
 
 
+CONFLICT = ROOT / "examples" / "conflicting-records"
+
+
+class ConflictingRecordsTests(unittest.TestCase):
+    """The example that shows a valid link over a wrong identity.
+
+    It exists because testing this with only one animal present hides the bug
+    behind a broken-link error, which is what the first attempt did.
+    """
+
+    def setUp(self):
+        self.result = ndos_table.check_metadata(CONFLICT / "metadata")
+
+    def test_the_committed_output_is_what_the_code_produces(self):
+        committed = (CONFLICT / "check-output.txt").read_text(encoding="utf-8")
+        produced = ndos_table.render_check(self.result)
+        self.assertEqual(
+            produced.strip(), committed.strip(),
+            "examples/conflicting-records/check-output.txt is stale. Regenerate:\n"
+            "  python3 ndos_table.py check examples/conflicting-records/metadata "
+            "> examples/conflicting-records/check-output.txt",
+        )
+
+    def test_every_link_resolves_so_integrity_alone_would_pass(self):
+        """The whole point: nothing points at a missing animal."""
+        self.assertEqual(self.result["references"], [])
+
+    def test_the_contradiction_is_reported(self):
+        self.assertEqual(len(self.result["contradictions"]), 1)
+        message = self.result["contradictions"][0]["message"]
+        self.assertIn("M201", message)
+        self.assertIn("M202", message)
+
+    def test_the_contradicted_row_is_not_counted_as_ready(self):
+        self.assertEqual(self.result["row_count"], 2)
+        self.assertEqual(self.result["complete_rows"], 1)
+
+    def test_the_prose_matches_the_outcome(self):
+        prose = (CONFLICT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Ready to use    : 1 (50%)", prose)
+        self.assertIn("Disagreements   : 1", prose)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
