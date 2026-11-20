@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ndos.dev/schemas/verification/0.1",
+  "$id": "https://elnazkarami.github.io/N-DOS/schemas/verification/0.1.json",
   "title": "NDOS Transfer Verification",
   "description": "The result of comparing a source manifest against a destination after a transfer. Three outcomes, because a comparison that found no mismatch has not necessarily verified anything: if a checksum was missing or a path could not be read, 'no mismatch' is the honest answer and 'verified' is not.",
   "type": "object",

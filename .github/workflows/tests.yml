@@ -67,6 +67,7 @@ jobs:
           python ndos_gui.py --help
           python ndos_search.py --help
           python ndos_verify.py --help
+          python scripts/build_docs.py --check
 
       - name: End-to-end run on the synthetic fixture
         run: |

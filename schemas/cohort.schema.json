@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ndos.dev/schemas/cohort/0.1",
+  "$id": "https://elnazkarami.github.io/N-DOS/schemas/cohort/0.1.json",
   "title": "NDOS Cohort",
   "description": "A frozen set of sessions selected by a query, recorded together with the query plan that produced it so the selection can be re-run, audited, or disputed. A cohort states not only which sessions were included but how many were excluded and how many could not be decided.",
   "type": "object",
