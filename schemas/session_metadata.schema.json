@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ndos.dev/schemas/session-metadata/0.1",
+  "$id": "https://elnazkarami.github.io/N-DOS/schemas/session-metadata/0.1.json",
   "title": "NDOS Session Metadata",
   "description": "Sessions joined to the animal they came from and the procedures that preceded them, produced from reviewed spreadsheets. Every value records how it is known: observed from the filesystem, declared by a person, or computed by NDOS. Values nobody has supplied are absent rather than empty, so 'not yet entered' is never confused with 'checked and unknown'.",
   "type": "object",

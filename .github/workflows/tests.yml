@@ -18,6 +18,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.13"]
+        # ubuntu-latest rolled to 26.04, which has no prebuilt 3.9 for
+        # setup-python to fetch. NDOS claims 3.9 support, so the answer is a
+        # runner that still has it, not a quieter matrix: an untested floor is
+        # not a supported floor. 3.9 reaches end of life in October 2025, so
+        # this pin is on borrowed time and dropping the floor is the real
+        # decision waiting behind it.
+        exclude:
+          - os: ubuntu-latest
+            python-version: "3.9"
+        include:
+          - os: ubuntu-24.04
+            python-version: "3.9"
 
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +79,7 @@ jobs:
           python ndos_gui.py --help
           python ndos_search.py --help
           python ndos_verify.py --help
+          python scripts/build_docs.py --check
 
       - name: End-to-end run on the synthetic fixture
         run: |
