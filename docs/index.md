@@ -2,10 +2,6 @@
 title: "N-DOS"
 ---
 
-**Home** · [Why](why.html) · [The standard](specification.html) · [Quickstart](quickstart.html) · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # N-DOS
 
 **A shared language for animal neuroscience data, and the tooling that makes

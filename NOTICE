@@ -10,3 +10,9 @@ You may obtain a copy of the License at
 Portions of this repository predate NDOS Core and were previously distributed
 under the MIT License. Those revisions remain available under MIT; see
 legacy/README.md and the v0-manuscript-2025 tag.
+
+This repository redistributes the IBM Plex typeface (site/fonts/), which is
+Copyright 2017 IBM Corp. and licensed under the SIL Open Font License,
+Version 1.1. Its licence travels with it: site/fonts/OFL.txt. IBM Plex is
+used only by the published website; the Python package neither contains nor
+requires it.

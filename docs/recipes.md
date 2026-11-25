@@ -2,10 +2,6 @@
 title: "When a guess is wrong"
 ---
 
-[Home](index.html) · [Why](why.html) · [The standard](specification.html) · [Quickstart](quickstart.html) · **When a guess is wrong** · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # When it doesn't do what you expected
 
 [QUICKSTART.md](quickstart.html) walks through the happy path. This is the other

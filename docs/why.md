@@ -2,10 +2,6 @@
 title: "Why N-DOS exists"
 ---
 
-[Home](index.html) · **Why** · [The standard](specification.html) · [Quickstart](quickstart.html) · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # Why N-DOS exists
 
 **Neuroscience has good standards for publishing data. It has almost nothing

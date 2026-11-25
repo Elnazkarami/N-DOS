@@ -2,10 +2,6 @@
 title: "Quickstart"
 ---
 
-[Home](index.html) · [Why](why.html) · [The standard](specification.html) · **Quickstart** · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # NDOS quickstart
 
 The standard covers two situations, and so does this guide.

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% seo %}
+    <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+    <link rel="icon" type="image/svg+xml" href="{{ '/assets/icon.svg' | relative_url }}">
+    <link rel="apple-touch-icon" href="{{ '/assets/icon.png' | relative_url }}">
+  </head>
+  <body{% if page.url == '/' %} class="home"{% endif %}>
+    <a class="skip" href="#content">Skip to content</a>
+
+    <header class="masthead">
+      <div class="bar">
+        <a class="wordmark" href="{{ '/' | relative_url }}">
+          N-DOS<span class="rule"></span>
+        </a>
+        <nav aria-label="Sections">
+<!--NAV-->
+        </nav>
+      </div>
+    </header>
+
+    <div class="shell">
+      <main id="content">
+        {{ content }}
+      </main>
+      <aside class="toc" aria-label="On this page" hidden></aside>
+    </div>
+
+    <footer class="colophon">
+      <div class="bar">
+        <div class="col">
+          <span class="wordmark small">N-DOS</span>
+          <p>A shared language for animal neuroscience data, and the tooling
+             that makes following it practical.</p>
+        </div>
+        <div class="col">
+          <h2>The project</h2>
+          <a href="https://github.com/Elnazkarami/N-DOS">Repository</a>
+          <a href="https://pypi.org/project/ndos/">Package on PyPI</a>
+          <a href="https://doi.org/10.5281/zenodo.23167365">DOI</a>
+          <a href="https://neurostars.org/t/36467">Questions on Neurostars</a>
+        </div>
+        <div class="col">
+          <h2>Status</h2>
+          <p>Software 0.2.0. Specification 0.1, a draft.<br>
+             No external lab has completed a pilot yet —
+             <a href="{{ '/contributing.html' | relative_url }}">that is the
+             most useful thing you could change</a>.</p>
+          <p class="fine">Apache-2.0 · by
+            <a href="https://github.com/Elnazkarami">Elnaz Alikarami</a><br>
+            Set in IBM Plex, served from this site.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="{{ '/assets/js/toc.js' | relative_url }}" defer></script>
+  </body>
+</html>

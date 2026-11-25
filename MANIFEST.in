@@ -3,6 +3,7 @@
 # them would ship the implementation without the thing it implements.
 include LICENSE NOTICE CITATION.cff CONTRIBUTING.md
 include README.md QUICKSTART.md RECIPES.md LEGACY.md SPECIFICATION.md
+include WHY.md ROADMAP.md
 recursive-include schemas *.json
 recursive-include ndos_gui_static *
 

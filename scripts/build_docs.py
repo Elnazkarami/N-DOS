@@ -73,18 +73,34 @@ def _schema_targets() -> Dict[Path, Path]:
     return targets
 
 
-#: The bar at the top of every page. (label, published page, anchor)
-#: A site whose pages cannot reach each other is a pile of files.
+#: The masthead's navigation, in order. The page you are on is marked, not
+#: linked to itself. "Home" is absent on purpose: the wordmark is the way
+#: back, the way it is on every site that has one.
 NAV: Tuple[Tuple[str, str], ...] = (
-    ("Home", "index.html"),
     ("Why", "why.html"),
     ("The standard", "specification.html"),
     ("Quickstart", "quickstart.html"),
     ("When a guess is wrong", "recipes.html"),
-    ("Examples", "index.html#worked-examples"),
     ("Roadmap", "roadmap.html"),
     ("Contributing", "contributing.html"),
 )
+
+
+def _nav_html() -> str:
+    """The masthead links, written once here rather than twice in HTML."""
+    lines = []
+    for label, target in NAV:
+        here = ("{% if page.url == '/" + target + "' %}"
+                ' aria-current="page"{% endif %}')
+        lines.append(
+            f"          <a href=\"{{{{ '/{target}' | relative_url }}}}\""
+            f"{here}>{label}</a>"
+        )
+    lines.append(
+        '          <a class="out" href="https://github.com/Elnazkarami/N-DOS">'
+        "GitHub&nbsp;&#8599;</a>"
+    )
+    return "\n".join(lines)
 
 
 def _published_pages() -> Dict[str, str]:
@@ -95,21 +111,7 @@ def _published_pages() -> Dict[str, str]:
     }
 
 
-def _nav(depth: int, current: str) -> str:
-    """The navigation bar, with the page you are on not linked to itself."""
-    up = "../" * depth
-    parts = []
-    for label, target in NAV:
-        if target == current:
-            parts.append(f"**{label}**")
-        else:
-            parts.append(f"[{label}]({up}{target})")
-    parts.append("[GitHub](https://github.com/Elnazkarami/N-DOS)")
-    return " · ".join(parts)
-
-
-def _front_matter(title: str, body: str, depth: int = 0,
-                  current: str = "") -> str:
+def _front_matter(title: str, body: str, depth: int = 0) -> str:
     """Jekyll needs a header; the Markdown below it keeps its own words.
 
     Links are the one thing that must change. A relative link that worked in
@@ -127,8 +129,7 @@ def _front_matter(title: str, body: str, depth: int = 0,
         return f"](https://github.com/Elnazkarami/N-DOS/blob/main/{target})"
 
     body = re.sub(r"\]\((?!https?://|#)([A-Za-z0-9_./-]+\.md)\)", _retarget, body)
-    nav = f"{_nav(depth, current)}\n\n---\n\n"
-    return f"---\ntitle: {json.dumps(title)}\n---\n\n{nav}{body}"
+    return f"---\ntitle: {json.dumps(title)}\n---\n\n{body}"
 
 
 def build() -> List[str]:
@@ -147,7 +148,6 @@ def build() -> List[str]:
                 title,
                 source.read_text(encoding="utf-8"),
                 depth=target_name.count("/"),
-                current=target_name.replace(".md", ".html"),
             ),
             encoding="utf-8",
         )
@@ -167,10 +167,23 @@ def build() -> List[str]:
         shutil.copy2(source, target)
         written.append(f"assets/{name}")
 
-    head = DOCS / "_includes" / "head-custom.html"
-    head.parent.mkdir(parents=True, exist_ok=True)
-    head.write_text(_head_custom(), encoding="utf-8")
-    written.append("_includes/head-custom.html")
+    for source, target in _site_files().items():
+        if not source.is_file():
+            raise SystemExit(f"missing site file: {source.name}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.name == "layout.html":
+            marker = "<!--NAV-->"
+            text = source.read_text(encoding="utf-8")
+            if marker not in text:
+                raise SystemExit(
+                    "site/layout.html has no <!--NAV--> marker, so the "
+                    "navigation in build_docs.py has nowhere to go."
+                )
+            target.write_text(text.replace(marker, _nav_html()),
+                              encoding="utf-8")
+        else:
+            shutil.copy2(source, target)
+        written.append(str(target.relative_to(DOCS)))
 
     (DOCS / "_config.yml").write_text(
         "# Built by scripts/build_docs.py. Do not edit docs/ by hand: it is\n"
@@ -179,7 +192,9 @@ def build() -> List[str]:
         "description: >-\n"
         "  A shared language for animal neuroscience data, and the tooling\n"
         "  that makes following it practical.\n"
-        "theme: jekyll-theme-primer\n"
+        "# No theme: the layout, the stylesheet and the fonts are in site/\n"
+        "# and are copied here. A themed site looks like the theme.\n"
+        "plugins: [jekyll-seo-tag]\n"
         "exclude: [README.md]\n"
         "include: [schemas]\n"
         "\n"
@@ -193,6 +208,7 @@ def build() -> List[str]:
         "  - scope:\n"
         "      path: \"\"\n"
         "    values:\n"
+        "      layout: default\n"
         "      image: /assets/social-card.png\n",
         encoding="utf-8",
     )
@@ -223,19 +239,26 @@ def _cohort_excerpt() -> str:
     return "\n".join(lines[3:stop - 1]).rstrip()
 
 
-def _head_custom() -> str:
-    """The icons, which the theme does not emit and the SEO tag does not own.
+def _site_files() -> Dict[Path, Path]:
+    """The hand-written site: a layout, a stylesheet, a script, the fonts.
 
-    Everything else about how a link to this site previews -- the card, the
-    title, the description -- is Jekyll's SEO tag reading _config.yml below,
-    rather than a second set of meta tags here competing with it. The theme
-    renders {% seo %} before this include, so a duplicate would win or lose
-    by position, which is not a way to decide anything.
+    The default GitHub Pages theme is recognisable at a glance, and a project
+    asking laboratories to adopt its standard should not look like it was
+    assembled from the first option offered. So the theme is gone and these
+    four things replace it. The fonts are served from here rather than from a
+    font CDN, which would hand every visitor's address to a third party on a
+    site whose claim is that nothing leaves your machine.
     """
-    return """<!-- Built by scripts/build_docs.py. Do not edit by hand. -->
-<link rel="icon" type="image/svg+xml" href="{{ '/assets/icon.svg' | relative_url }}">
-<link rel="apple-touch-icon" href="{{ '/assets/icon.png' | relative_url }}">
-"""
+    site = ROOT / "site"
+    files = {
+        site / "layout.html": DOCS / "_layouts" / "default.html",
+        site / "style.css": DOCS / "assets" / "css" / "site.css",
+        site / "toc.js": DOCS / "assets" / "js" / "toc.js",
+    }
+    for font in sorted((site / "fonts").iterdir()):
+        if font.is_file():
+            files[font] = DOCS / "assets" / "fonts" / font.name
+    return files
 
 
 def _landing() -> str:
@@ -386,7 +409,6 @@ demonstrate.
 
 Apache-2.0. By [Elnaz Alikarami](https://github.com/Elnazkarami).
 """,
-        current="index.html",
     )
 
 
