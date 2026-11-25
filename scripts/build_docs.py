@@ -35,6 +35,8 @@ DOCS = ROOT / "docs"
 #: Pages served from Markdown that already exists. (source, destination, title)
 PAGES: Tuple[Tuple[str, str, str], ...] = (
     ("SPECIFICATION.md", "specification.md", "The N-DOS standard"),
+    ("WHY.md", "why.md", "Why N-DOS exists"),
+    ("ROADMAP.md", "roadmap.md", "Roadmap"),
     ("QUICKSTART.md", "quickstart.md", "Quickstart"),
     ("RECIPES.md", "recipes.md", "When a guess is wrong"),
     ("CONTRIBUTING.md", "contributing.md", "Contributing"),
@@ -64,16 +66,62 @@ def _schema_targets() -> Dict[Path, Path]:
     return targets
 
 
-def _front_matter(title: str, body: str) -> str:
-    """Jekyll needs a header; the Markdown below it is untouched."""
-    # A relative link that worked in the repository does not work on the site,
-    # where the files sit at different paths. Absolute links to GitHub do.
-    body = re.sub(
-        r"\]\((?!https?://|#)([A-Za-z0-9_./-]+\.md)\)",
-        r"](https://github.com/Elnazkarami/N-DOS/blob/main/\1)",
-        body,
-    )
-    return f"---\ntitle: {json.dumps(title)}\n---\n\n{body}"
+#: The bar at the top of every page. (label, published page, anchor)
+#: A site whose pages cannot reach each other is a pile of files.
+NAV: Tuple[Tuple[str, str], ...] = (
+    ("Home", "index.html"),
+    ("Why", "why.html"),
+    ("The standard", "specification.html"),
+    ("Quickstart", "quickstart.html"),
+    ("When a guess is wrong", "recipes.html"),
+    ("Examples", "index.html#worked-examples"),
+    ("Roadmap", "roadmap.html"),
+    ("Contributing", "contributing.html"),
+)
+
+
+def _published_pages() -> Dict[str, str]:
+    """Which repository Markdown file is served where on this site."""
+    return {
+        source: target.replace(".md", ".html")
+        for source, target, _ in PAGES
+    }
+
+
+def _nav(depth: int, current: str) -> str:
+    """The navigation bar, with the page you are on not linked to itself."""
+    up = "../" * depth
+    parts = []
+    for label, target in NAV:
+        if target == current:
+            parts.append(f"**{label}**")
+        else:
+            parts.append(f"[{label}]({up}{target})")
+    parts.append("[GitHub](https://github.com/Elnazkarami/N-DOS)")
+    return " · ".join(parts)
+
+
+def _front_matter(title: str, body: str, depth: int = 0,
+                  current: str = "") -> str:
+    """Jekyll needs a header; the Markdown below it keeps its own words.
+
+    Links are the one thing that must change. A relative link that worked in
+    the repository does not work on the site, where the files sit at different
+    paths -- so a link to a page this site publishes becomes a link to that
+    page, and everything else becomes an absolute link to GitHub.
+    """
+    served = _published_pages()
+    up = "../" * depth
+
+    def _retarget(match: "re.Match[str]") -> str:
+        target = match.group(1)
+        if target in served:
+            return f"]({up}{served[target]})"
+        return f"](https://github.com/Elnazkarami/N-DOS/blob/main/{target})"
+
+    body = re.sub(r"\]\((?!https?://|#)([A-Za-z0-9_./-]+\.md)\)", _retarget, body)
+    nav = f"{_nav(depth, current)}\n\n---\n\n"
+    return f"---\ntitle: {json.dumps(title)}\n---\n\n{nav}{body}"
 
 
 def build() -> List[str]:
@@ -88,7 +136,12 @@ def build() -> List[str]:
         target = DOCS / target_name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
-            _front_matter(title, source.read_text(encoding="utf-8")),
+            _front_matter(
+                title,
+                source.read_text(encoding="utf-8"),
+                depth=target_name.count("/"),
+                current=target_name.replace(".md", ".html"),
+            ),
             encoding="utf-8",
         )
         written.append(target_name)
@@ -117,6 +170,26 @@ def build() -> List[str]:
     return sorted(written)
 
 
+def _cohort_excerpt() -> str:
+    """The committed query output, down to the part that makes the point.
+
+    Read from the example rather than retyped, so the landing page cannot
+    claim output the code does not produce.
+    """
+    source = ROOT / "examples" / "cohort-demo" / "query-output.txt"
+    lines = source.read_text(encoding="utf-8").splitlines()
+    try:
+        stop = next(i for i, line in enumerate(lines)
+                    if line.startswith("EXCLUDED"))
+    except StopIteration:
+        raise SystemExit(
+            "examples/cohort-demo/query-output.txt no longer has an EXCLUDED "
+            "section; the landing page excerpt needs rechecking."
+        )
+    # Drop the banner at the top and the divider above EXCLUDED.
+    return "\n".join(lines[3:stop - 1]).rstrip()
+
+
 def _landing() -> str:
     schemas = "\n".join(
         f"- [`{identity[len(SCHEMA_BASE):]}`]({identity}) — "
@@ -135,29 +208,85 @@ following it practical.**
 
 Every neuroscience lab invents its own way of organising data. Often every lab
 member invents their own. None of them can read each other's — and two years
-on, a lab frequently can't read its own.
+on, a lab frequently can't read its own. Meanwhile the standards that do exist
+— BIDS, NWB, DANDI — all begin at publication, which is years after the point
+where the data was made and where it was lost.
+
+N-DOS is a specification for the part in between, plus the tools that make
+complying with it practical, plus the means to bring data that predates it up
+to it. It hands off to BIDS and NWB rather than replacing them.
 
 ```bash
 pip install ndos
 ```
 
+Zero runtime dependencies — Python 3.9+ and the standard library. Nothing
+changes on your disk unless you name one of the three commands that can, and
+each shows a plan and waits.
+
+→ **[Why N-DOS exists](why.html)**, the reasoning and the evidence behind it.
+
+## Three answers, not two
+
+The clearest way to show what N-DOS is for. Four sessions, four animals, one
+question. This output is committed in the repository and regenerated by a
+test, so it is what the code actually prints:
+
+```
+{_cohort_excerpt()}
+```
+
+A session whose species nobody wrote down is **not** a session known not to be
+a mouse. A tool that conflates those hands you a biased cohort without saying
+so. Every value N-DOS stores records how it is known — observed, declared,
+computed, or checked and genuinely unknown — and a blank is none of them.
+
 ## The standard
 
 **[The N-DOS specification](specification.html)** — directory structure, how
 subjects and sessions are identified, how files are named, what metadata an
-experiment carries, and how each value is known: observed, declared, computed,
-or checked and genuinely unknown.
+experiment carries, and how each value is known.
 
-A standard nobody can comply with is just a PDF, so it ships with the tools
-that make complying with it practical, and with the means to bring data that
-predates it to the standard.
+A standard nobody can comply with is just a PDF. So the specification defines
+three things a project can be, and the tools withhold nothing at the lower
+levels:
+
+| | What it means | What it costs you |
+| --- | --- | --- |
+| **N-DOS-readable** | N-DOS can inventory, search and query it in whatever organisation it already has | Nothing. No layout, no metadata, no permission to change anything |
+| **N-DOS-conformant** | It satisfies every MUST: the directories, the subject-then-session shape, the identifier rules | A reorganisation you choose to do, with a plan shown first |
+| **N-DOS-traceable** | It also records how its facts are known — evidence, flags, provenance | Metadata somebody has to fill in |
+
+A lab with an inherited archive starts at **readable** and may reasonably stay
+there. Most of what N-DOS does is available at that level.
+
+## What the tools do
+
+- **Recovery.** Inventories heterogeneous storage, reads inside archives
+  without extracting them, and proposes a structure — showing the rule and the
+  evidence behind every guess, so you can correct it rather than trust it.
+- **Search.** Finds the word you remember — `CA1`, `GCaMP`, a construct name —
+  across filenames, lab notes, protocol files and spreadsheets, including
+  `.docx` and `.xlsx`. A hit in a surgery log reports which animals it names,
+  which is what turns a document into a route to the recordings.
+- **Discovery.** Builds cohorts from incomplete records and returns matched,
+  excluded, and *cannot be ruled out*.
+- **Traceability.** Records what produced a result, and traces a figure back
+  through the commands and parameters to the raw files it came from.
+- **Verification.** Checks a transferred dataset arrived intact, and says
+  *inconclusive* rather than passing something it could not read.
+
+All of it also runs in a window: `ndos gui`, served by the package itself,
+bound to this machine only. Nothing is uploaded anywhere.
 
 ## Start here
 
 - **[Quickstart](quickstart.html)** — about fifteen minutes, and it will not
   move or change your data.
-- **[When a guess is wrong](recipes.html)** — what to do when NDOS reads your
+- **[When a guess is wrong](recipes.html)** — what to do when N-DOS reads your
   layout incorrectly, which on some layout it will.
+- **[Roadmap](roadmap.html)** — what exists, what is next, and what has been
+  deliberately left undone.
 - **[Contributing](contributing.html)** — including the bounded tasks worth
   volunteering for.
 
@@ -177,16 +306,39 @@ Versioned JSON Schema, served at the identity each one declares:
 
 {schemas}
 
+## Looking for pilot testers
+
+**No external lab has completed a pilot yet.** That is the single most useful
+thing a reader of this page can change.
+
+If you have a directory of lab data nobody fully understands any more, that is
+exactly what this needs to meet. It takes about fifteen minutes and **will not
+move or change your data**. No data needs sharing — every form asks about the
+*shape* of your directories, never their contents.
+
+| | |
+| --- | --- |
+| **[Tell us how it went →](https://github.com/Elnazkarami/N-DOS/issues/new?template=3-pilot-feedback.yml)** | Even "I gave up at step three" is a result |
+| **[It read my folders wrongly →](https://github.com/Elnazkarami/N-DOS/issues/new?template=1-layout-misread.yml)** | The most useful report there is |
+| **[Something is broken →](https://github.com/Elnazkarami/N-DOS/issues/new?template=2-bug.yml)** | A crash or a wrong answer |
+
 ## Elsewhere
 
-- [Repository](https://github.com/Elnazkarami/N-DOS)
-- [Package](https://pypi.org/project/ndos/)
-- [DOI](https://doi.org/10.5281/zenodo.23167365)
-- [Questions and discussion](https://neurostars.org/t/36467)
+- [Repository](https://github.com/Elnazkarami/N-DOS) — and the
+  [README](https://github.com/Elnazkarami/N-DOS#readme), which documents every
+  command
+- [Package on PyPI](https://pypi.org/project/ndos/)
+- [DOI](https://doi.org/10.5281/zenodo.23167365) — cite the version you ran
+- [Questions and discussion](https://neurostars.org/t/36467) on Neurostars
 
-NDOS hands off to BIDS and NWB rather than replacing them, and does not claim
-conformance it cannot demonstrate.
+**Status: 0.2.0.** The software works and is tested on Linux, macOS and
+Windows. The specification is a draft at 0.1 and will change in response to
+labs using it. N-DOS claims no conformance to BIDS or NWB that it cannot
+demonstrate.
+
+Apache-2.0. By [Elnaz Alikarami](https://github.com/Elnazkarami).
 """,
+        current="index.html",
     )
 
 

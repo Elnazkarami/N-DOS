@@ -2,6 +2,10 @@
 title: "Worked example: a cohort query"
 ---
 
+[Home](../index.html) · [Why](../why.html) · [The standard](../specification.html) · [Quickstart](../quickstart.html) · [When a guess is wrong](../recipes.html) · [Examples](../index.html#worked-examples) · [Roadmap](../roadmap.html) · [Contributing](../contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
+
+---
+
 # A cohort query, with all three answers
 
 Four sessions, four animals, one question. The point is the third group.

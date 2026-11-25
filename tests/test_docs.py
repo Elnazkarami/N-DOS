@@ -79,6 +79,73 @@ class PublishedSiteTests(unittest.TestCase):
                 relative, [], f"{page.name} links to {relative} relatively"
             )
 
+    def test_every_page_can_reach_every_other(self):
+        """A site whose pages cannot reach each other is a pile of files.
+
+        The page you are on appears in the bar as bold text rather than as a
+        link to itself, so this counts entries, not URLs.
+        """
+        for page in sorted(DOCS.rglob("*.md")):
+            lines = page.read_text(encoding="utf-8").splitlines()
+            bar = [
+                line for line in lines
+                if "[GitHub](https://github.com/Elnazkarami/N-DOS)" in line
+                and " · " in line
+            ]
+            with self.subTest(page=page.name):
+                self.assertEqual(
+                    len(bar), 1, f"{page.name} has no single navigation bar"
+                )
+                self.assertEqual(
+                    len(bar[0].split(" · ")), 9,
+                    f"{page.name} navigation bar is incomplete: {bar[0]}",
+                )
+
+    def test_the_reasoning_and_the_roadmap_are_published(self):
+        """The site is not only the specification; these are its other halves."""
+        for name, heading in (("why.md", "# Why N-DOS exists"),
+                              ("roadmap.md", "# Roadmap")):
+            served = DOCS / name
+            self.assertTrue(served.is_file(), f"{name} is not published")
+            self.assertIn(heading, served.read_text(encoding="utf-8"), name)
+
+    def test_internal_links_stay_on_the_site(self):
+        """A link to a page this site serves must not leave for GitHub.
+
+        Sending a reader to raw Markdown on github.com when the rendered page
+        exists two directories away is a worse site, not a safer one.
+        """
+        import re
+
+        published = {
+            target.replace(".md", ".html")
+            for target in ("specification.md", "why.md", "roadmap.md",
+                           "quickstart.md", "recipes.md", "contributing.md")
+        }
+        for page in sorted(DOCS.rglob("*.md")):
+            body = page.read_text(encoding="utf-8")
+            escaping = [
+                link for link in re.findall(
+                    r"https://github\.com/Elnazkarami/N-DOS/blob/main/([A-Za-z0-9_./-]+\.md)",
+                    body,
+                )
+                if link.lower().replace(".md", ".html") in published
+            ]
+            self.assertEqual(
+                escaping, [], f"{page.name} leaves the site for {escaping}"
+            )
+
+    def test_the_landing_page_quotes_output_it_does_not_invent(self):
+        """The excerpt is read from the committed example, not retyped."""
+        index = (DOCS / "index.md").read_text(encoding="utf-8")
+        committed = (
+            ROOT / "examples" / "cohort-demo" / "query-output.txt"
+        ).read_text(encoding="utf-8")
+        for line in ("Considered 4 sessions: 1 matched, 2 unresolved, 1 excluded.",
+                     "CANNOT BE RULED OUT (2)"):
+            self.assertIn(line, committed, line)
+            self.assertIn(line, index, f"the landing page dropped: {line}")
+
     def test_nothing_points_at_the_domain_that_does_not_exist(self):
         for path in list(ROOT.glob("*.md")) + list(SCHEMAS.glob("*.json")):
             self.assertNotIn(

@@ -2,6 +2,10 @@
 title: "The N-DOS standard"
 ---
 
+[Home](index.html) · [Why](why.html) · **The standard** · [Quickstart](quickstart.html) · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
+
+---
+
 # The N-DOS standard
 
 **Version 0.1 — draft.** Derived from *N-DOS: A Practical Framework for Neural
