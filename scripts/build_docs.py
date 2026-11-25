@@ -46,9 +46,16 @@ PAGES: Tuple[Tuple[str, str, str], ...] = (
      "Worked example: two records that disagree"),
 )
 
+#: The link preview card and the site icon, copied as they are. The SVGs are
+#: the source and the PNGs are rendered from them; see assets/README.md.
+ASSETS = ("social-card.svg", "social-card.png", "icon.svg", "icon.png")
+
 #: A schema is served at exactly the path its own $id claims. That is the
 #: whole point: an $id that does not resolve is a contract pointing nowhere.
 SCHEMA_BASE = "https://elnazkarami.github.io/N-DOS/schemas/"
+
+#: Open Graph needs an absolute URL, so the site's own address is stated once.
+SITE = "https://elnazkarami.github.io/N-DOS"
 
 
 def _schema_targets() -> Dict[Path, Path]:
@@ -151,6 +158,20 @@ def build() -> List[str]:
         shutil.copy2(source, target)
         written.append(str(target.relative_to(DOCS)))
 
+    for name in ASSETS:
+        source = ROOT / "assets" / name
+        if not source.is_file():
+            raise SystemExit(f"missing asset: assets/{name}")
+        target = DOCS / "assets" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        written.append(f"assets/{name}")
+
+    head = DOCS / "_includes" / "head-custom.html"
+    head.parent.mkdir(parents=True, exist_ok=True)
+    head.write_text(_head_custom(), encoding="utf-8")
+    written.append("_includes/head-custom.html")
+
     (DOCS / "_config.yml").write_text(
         "# Built by scripts/build_docs.py. Do not edit docs/ by hand: it is\n"
         "# regenerated from the canonical files and a test checks it matches.\n"
@@ -160,7 +181,19 @@ def build() -> List[str]:
         "  that makes following it practical.\n"
         "theme: jekyll-theme-primer\n"
         "exclude: [README.md]\n"
-        "include: [schemas]\n",
+        "include: [schemas]\n"
+        "\n"
+        "# Jekyll's SEO tag builds the link preview from these. Without an\n"
+        "# absolute url it cannot, and a posted link renders as a bare URL.\n"
+        f"url: {SITE.rsplit('/', 1)[0]}\n"
+        f"baseurl: /{SITE.rsplit('/', 1)[1]}\n"
+        "twitter:\n"
+        "  card: summary_large_image\n"
+        "defaults:\n"
+        "  - scope:\n"
+        "      path: \"\"\n"
+        "    values:\n"
+        "      image: /assets/social-card.png\n",
         encoding="utf-8",
     )
     written.append("_config.yml")
@@ -188,6 +221,21 @@ def _cohort_excerpt() -> str:
         )
     # Drop the banner at the top and the divider above EXCLUDED.
     return "\n".join(lines[3:stop - 1]).rstrip()
+
+
+def _head_custom() -> str:
+    """The icons, which the theme does not emit and the SEO tag does not own.
+
+    Everything else about how a link to this site previews -- the card, the
+    title, the description -- is Jekyll's SEO tag reading _config.yml below,
+    rather than a second set of meta tags here competing with it. The theme
+    renders {% seo %} before this include, so a duplicate would win or lose
+    by position, which is not a way to decide anything.
+    """
+    return """<!-- Built by scripts/build_docs.py. Do not edit by hand. -->
+<link rel="icon" type="image/svg+xml" href="{{ '/assets/icon.svg' | relative_url }}">
+<link rel="apple-touch-icon" href="{{ '/assets/icon.png' | relative_url }}">
+"""
 
 
 def _landing() -> str:

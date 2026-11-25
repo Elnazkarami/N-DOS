@@ -146,6 +146,68 @@ class PublishedSiteTests(unittest.TestCase):
             self.assertIn(line, committed, line)
             self.assertIn(line, index, f"the landing page dropped: {line}")
 
+    def test_the_link_preview_card_is_published(self):
+        """A link posted anywhere shows this or it shows nothing."""
+        for name in ("social-card.svg", "social-card.png",
+                     "icon.svg", "icon.png"):
+            served = DOCS / "assets" / name
+            with self.subTest(asset=name):
+                self.assertTrue(served.is_file(), f"{name} is not published")
+                self.assertEqual(
+                    served.read_bytes(),
+                    (ROOT / "assets" / name).read_bytes(),
+                    f"the published {name} differs from assets/{name}",
+                )
+
+    def test_the_card_png_matches_the_svg_it_was_rendered_from(self):
+        """Catches an edited SVG whose PNG was never re-rendered.
+
+        The two cannot be compared pixel for pixel without a renderer, but a
+        size that no longer agrees is the mistake that actually happens.
+        """
+        import re
+        import struct
+
+        for stem, expected_scale in (("social-card", 1), ("icon", 3)):
+            svg = (ROOT / "assets" / f"{stem}.svg").read_text(encoding="utf-8")
+            declared = {
+                key: int(re.search(rf'\b{key}="(\d+)"', svg).group(1))
+                for key in ("width", "height")
+            }
+            png = (ROOT / "assets" / f"{stem}.png").read_bytes()
+            self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n", stem)
+            width, height = struct.unpack(">II", png[16:24])
+            with self.subTest(asset=stem):
+                self.assertEqual(
+                    (width, height),
+                    (declared["width"] * expected_scale,
+                     declared["height"] * expected_scale),
+                    f"assets/{stem}.png is {width}x{height}, but "
+                    f"assets/{stem}.svg declares "
+                    f"{declared['width']}x{declared['height']} — re-render it, "
+                    "see assets/README.md",
+                )
+
+    def test_the_site_tells_jekyll_where_the_card_is(self):
+        """The SEO tag cannot build a preview from a relative image."""
+        config = (DOCS / "_config.yml").read_text(encoding="utf-8")
+        self.assertIn("url: https://elnazkarami.github.io", config)
+        self.assertIn("baseurl: /N-DOS", config)
+        self.assertIn("image: /assets/social-card.png", config)
+        self.assertIn("card: summary_large_image", config)
+
+    def test_the_icons_reach_the_page_head(self):
+        """head-custom.html is the hook the Primer theme includes."""
+        head = DOCS / "_includes" / "head-custom.html"
+        self.assertTrue(head.is_file(), "the theme's head hook is not written")
+        body = head.read_text(encoding="utf-8")
+        self.assertIn("/assets/icon.svg", body)
+        self.assertIn("/assets/icon.png", body)
+        self.assertNotIn(
+            "og:image", body,
+            "the SEO tag already emits this; two sets would compete",
+        )
+
     def test_nothing_points_at_the_domain_that_does_not_exist(self):
         for path in list(ROOT.glob("*.md")) + list(SCHEMAS.glob("*.json")):
             self.assertNotIn(
