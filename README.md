@@ -969,6 +969,7 @@ additionally validates generated manifests against the published schema.
 | `scripts/` | Regenerating what is derived: field definitions, the built interface, the site |
 | `docs/` | The published site — generated; do not edit by hand |
 | `assets/` | The link preview card and site icon, and how to regenerate them |
+| `site/` | The website itself: layout, stylesheet, fonts — no theme |
 | `SPECIFICATION.md` | **The standard itself** |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

@@ -2,10 +2,6 @@
 title: "Roadmap"
 ---
 
-[Home](index.html) · [Why](why.html) · [The standard](specification.html) · [Quickstart](quickstart.html) · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · **Roadmap** · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # Roadmap
 
 What exists, what is next, and what has been deliberately left undone. Dated

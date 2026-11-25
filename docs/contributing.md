@@ -2,10 +2,6 @@
 title: "Contributing"
 ---
 
-[Home](index.html) · [Why](why.html) · [The standard](specification.html) · [Quickstart](quickstart.html) · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · **Contributing** · [GitHub](https://github.com/Elnazkarami/N-DOS)
-
----
-
 # Contributing to NDOS
 
 The most useful thing you can send is **a folder layout NDOS reads wrongly**.

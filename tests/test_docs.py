@@ -79,26 +79,27 @@ class PublishedSiteTests(unittest.TestCase):
                 relative, [], f"{page.name} links to {relative} relatively"
             )
 
-    def test_every_page_can_reach_every_other(self):
-        """A site whose pages cannot reach each other is a pile of files.
-
-        The page you are on appears in the bar as bold text rather than as a
-        link to itself, so this counts entries, not URLs.
-        """
-        for page in sorted(DOCS.rglob("*.md")):
-            lines = page.read_text(encoding="utf-8").splitlines()
-            bar = [
-                line for line in lines
-                if "[GitHub](https://github.com/Elnazkarami/N-DOS)" in line
-                and " · " in line
-            ]
-            with self.subTest(page=page.name):
-                self.assertEqual(
-                    len(bar), 1, f"{page.name} has no single navigation bar"
+    def test_the_masthead_reaches_every_page(self):
+        """Navigation lives in the layout, so it cannot drift page to page."""
+        layout = (DOCS / "_layouts" / "default.html").read_text(encoding="utf-8")
+        for target in ("why.html", "specification.html", "quickstart.html",
+                       "recipes.html", "roadmap.html", "contributing.html"):
+            with self.subTest(target=target):
+                self.assertIn(f"'/{target}'", layout, f"{target} is not linked")
+                self.assertIn(
+                    f"page.url == '/{target}'", layout,
+                    f"{target} is never marked as the current page",
                 )
-                self.assertEqual(
-                    len(bar[0].split(" · ")), 9,
-                    f"{page.name} navigation bar is incomplete: {bar[0]}",
+        self.assertIn("https://github.com/Elnazkarami/N-DOS", layout)
+
+    def test_no_page_carries_its_own_navigation(self):
+        """It used to be pasted into every page, and looked like it."""
+        for page in sorted(DOCS.rglob("*.md")):
+            body = page.read_text(encoding="utf-8")
+            with self.subTest(page=page.name):
+                self.assertNotIn(
+                    "[GitHub](https://github.com/Elnazkarami/N-DOS) ", body,
+                    f"{page.name} still has a pasted navigation bar",
                 )
 
     def test_the_reasoning_and_the_roadmap_are_published(self):
@@ -196,16 +197,56 @@ class PublishedSiteTests(unittest.TestCase):
         self.assertIn("image: /assets/social-card.png", config)
         self.assertIn("card: summary_large_image", config)
 
-    def test_the_icons_reach_the_page_head(self):
-        """head-custom.html is the hook the Primer theme includes."""
-        head = DOCS / "_includes" / "head-custom.html"
-        self.assertTrue(head.is_file(), "the theme's head hook is not written")
-        body = head.read_text(encoding="utf-8")
-        self.assertIn("/assets/icon.svg", body)
-        self.assertIn("/assets/icon.png", body)
+    def test_the_layout_carries_the_head_the_site_needs(self):
+        """There is no theme, so the layout is the only place these exist."""
+        layout = (DOCS / "_layouts" / "default.html").read_text(encoding="utf-8")
+        for required in ("{% seo %}", "/assets/css/site.css",
+                         "/assets/icon.svg", "/assets/icon.png",
+                         "/assets/js/toc.js", 'name="viewport"'):
+            with self.subTest(required=required):
+                self.assertIn(required, layout)
         self.assertNotIn(
-            "og:image", body,
+            "og:image", layout,
             "the SEO tag already emits this; two sets would compete",
+        )
+
+    def test_the_site_is_not_themed(self):
+        """A themed site looks like the theme, which was the whole problem."""
+        config = (DOCS / "_config.yml").read_text(encoding="utf-8")
+        settings = [
+            line for line in config.splitlines()
+            if line.startswith(("theme:", "remote_theme:"))
+        ]
+        self.assertEqual(settings, [], "the site is still themed")
+        self.assertIn("layout: default", config)
+
+    def test_the_fonts_are_served_from_this_site(self):
+        """Not from a font CDN, on a site whose claim is that data stays put.
+
+        The stylesheet must also ask for every weight that is published, and
+        publish every weight it asks for -- a missing file silently falls back
+        to a system font, which is the thing this design is avoiding.
+        """
+        import re
+
+        published = {
+            path.name for path in (DOCS / "assets" / "fonts").iterdir()
+            if path.suffix == ".woff2"
+        }
+        self.assertTrue(published, "no fonts are published")
+        css = (DOCS / "assets" / "css" / "site.css").read_text(encoding="utf-8")
+        asked = set(re.findall(r"\.\./fonts/([A-Za-z0-9.-]+\.woff2)", css))
+        self.assertEqual(
+            asked, published,
+            "the stylesheet and the published fonts disagree",
+        )
+        for url in re.findall(r"url\(\"([^\"]+)\"\)", css):
+            self.assertFalse(
+                url.startswith("http"), f"{url} is fetched from elsewhere",
+            )
+        self.assertTrue(
+            (DOCS / "assets" / "fonts" / "OFL.txt").is_file(),
+            "IBM Plex is OFL-licensed and the licence must travel with it",
         )
 
     def test_nothing_points_at_the_domain_that_does_not_exist(self):

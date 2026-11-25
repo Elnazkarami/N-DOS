@@ -1,0 +1,367 @@
+/* The N-DOS site.
+ *
+ * Written rather than themed. The default GitHub Pages theme is recognisable
+ * at a glance, and a project asking labs to adopt its standard should not
+ * look like it was assembled from the first option offered.
+ *
+ * Three decisions carry most of it:
+ *
+ *   Type.     IBM Plex, served from this site -- not from a font CDN, which
+ *             would hand every visitor's address to a third party on a site
+ *             whose whole claim is that nothing leaves your machine. Serif
+ *             for prose because this is a document, sans for structure,
+ *             mono for anything a terminal printed.
+ *   Dark      The masthead, the footer and every code block share the colour
+ *   bands.    of the link preview card, so the pieces look like one project.
+ *   One       Everything else is ink on paper. Colour marks what you can act
+ *   accent.   on, and nothing else, so it keeps meaning something.
+ */
+
+/* ---------------------------------------------------------------- fonts */
+@font-face {
+  font-family: "Plex Serif"; font-style: normal; font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-serif-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Serif"; font-style: italic; font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-serif-latin-400-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Serif"; font-style: normal; font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-serif-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Sans"; font-style: normal; font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Sans"; font-style: normal; font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Sans"; font-style: normal; font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-sans-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Mono"; font-style: normal; font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+
+/* ---------------------------------------------------------------- tokens */
+:root {
+  --ink: #1a1c1f;
+  --ink-soft: #55595f;
+  --ink-faint: #868b92;
+  --paper: #fcfbf9;
+  --paper-sunk: #f3f1ec;
+  --rule: #e2ded5;
+  --accent: #1f5fd0;
+  --accent-soft: #e8eefb;
+  --night: #0d1117;
+  --night-ink: #e6edf3;
+  --night-soft: #9aa4b0;
+  --night-accent: #58a6ff;
+  --serif: "Plex Serif", Charter, Georgia, "Times New Roman", serif;
+  --sans: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --measure: 36rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6edf3;
+    --ink-soft: #a9b2bd;
+    --ink-faint: #7d8691;
+    --paper: #101418;
+    --paper-sunk: #161b22;
+    --rule: #262c34;
+    --accent: #6cb0ff;
+    --accent-soft: #15233a;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1.0625rem/1.72 var(--serif);
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.skip {
+  position: absolute; left: -9999px;
+  background: var(--night); color: var(--night-ink);
+  padding: .75rem 1rem; z-index: 10;
+}
+.skip:focus { left: 1rem; top: 1rem; }
+
+/* ------------------------------------------------------------- masthead */
+.masthead {
+  background: var(--night);
+  border-bottom: 3px solid var(--night-accent);
+}
+.masthead .bar {
+  max-width: 76rem; margin: 0 auto;
+  padding: 1.1rem 1.75rem;
+  display: flex; align-items: baseline; gap: 2rem; flex-wrap: wrap;
+}
+.wordmark {
+  font: 700 1.3rem/1 var(--sans);
+  letter-spacing: .13em;
+  color: var(--night-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.wordmark .rule {
+  display: block; width: 1.6rem; height: 3px;
+  background: var(--night-accent); margin-top: .5rem;
+}
+.masthead nav {
+  margin-left: auto;
+  min-width: 0;
+  display: flex; flex-wrap: wrap; gap: 1.5rem;
+  font: 600 .825rem/1 var(--sans);
+  letter-spacing: .035em;
+}
+.masthead nav a {
+  color: var(--night-soft);
+  text-decoration: none;
+  padding-bottom: .3rem;
+  border-bottom: 2px solid transparent;
+}
+.masthead nav a:hover { color: var(--night-ink); }
+.masthead nav a[aria-current="page"] {
+  color: #fff; border-bottom-color: var(--night-accent);
+}
+.masthead nav a.out { color: var(--night-accent); }
+
+/* ----------------------------------------------------------------- shell */
+.shell {
+  max-width: 76rem; margin: 0 auto;
+  padding: 0 1.75rem;
+  display: flex; gap: 4rem; align-items: flex-start;
+  /* Centred as a group, so a page with no contents panel does not strand
+     its text against the left edge of a wide window. */
+  justify-content: center;
+}
+main {
+  flex: 0 1 var(--measure); min-width: 0; max-width: 100%;
+  padding: 4.5rem 0 6rem;
+}
+.home main { padding-top: 3.5rem; }
+
+/* ------------------------------------------------------------- headings */
+h1, h2, h3, h4 {
+  font-family: var(--sans);
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -.016em;
+  color: var(--ink);
+}
+h1 {
+  font-size: clamp(2.6rem, 6vw, 3.9rem);
+  letter-spacing: -.035em;
+  margin: 0 0 1.6rem;
+}
+.home h1 { font-size: clamp(3.2rem, 9vw, 5.2rem); }
+h2 {
+  font-size: 1.55rem;
+  margin: 3.6rem 0 1rem;
+  padding-top: 1.6rem;
+  border-top: 1px solid var(--rule);
+}
+h3 {
+  font-size: 1.12rem; font-weight: 600;
+  letter-spacing: 0;
+  margin: 2.4rem 0 .7rem;
+}
+h4 { font-size: 1rem; font-weight: 600; margin: 1.8rem 0 .5rem; }
+
+/* The opening line of a page is the thesis; set it like one. */
+main > p:first-of-type {
+  font-size: 1.28rem; line-height: 1.6;
+  color: var(--ink-soft);
+}
+main > p:first-of-type strong { color: var(--ink); font-weight: 600; }
+.home main > p:first-of-type { font-size: 1.45rem; }
+
+p { margin: 0 0 1.3rem; }
+strong { font-weight: 600; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: .18em; }
+a:hover { text-decoration-thickness: 2px; }
+
+hr {
+  border: 0; height: 1px; background: var(--rule);
+  margin: 3rem 0;
+}
+/* A rule straight above a heading doubles the heading's own line. */
+hr + h2 { border-top: 0; padding-top: 0; margin-top: 2.4rem; }
+hr:has(+ h2) { margin-bottom: 0; }
+
+ul, ol { padding-left: 1.3rem; margin: 0 0 1.3rem; }
+li { margin-bottom: .55rem; }
+li > ul, li > ol { margin-top: .55rem; }
+
+blockquote {
+  margin: 1.8rem 0; padding: .2rem 0 .2rem 1.4rem;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-soft);
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+/* ----------------------------------------------------------------- code */
+code, kbd, samp {
+  font-family: var(--mono);
+  font-size: .875em;
+}
+:not(pre) > code {
+  background: var(--paper-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: .1em .38em;
+}
+pre {
+  background: var(--night);
+  color: var(--night-ink);
+  border-radius: 7px;
+  padding: 1.35rem 1.5rem;
+  margin: 1.8rem 0;
+  overflow-x: auto;
+  font-size: .8125rem;
+  line-height: 1.62;
+  /* Terminal output is never wrapped -- a broken line of aligned output is
+     worse than a scrollbar. The width is the column's, not the window's:
+     sizing this in vw overflowed the page at every width where the column
+     was narrower than the viewport. */
+  width: 100%;
+}
+pre code {
+  background: none; border: 0; padding: 0;
+  font-size: inherit; color: inherit;
+}
+.highlight, .highlighter-rouge { margin: 0; }
+.highlight .nb, .highlight .nf, .highlight .nv { color: var(--night-accent); }
+.highlight .s, .highlight .s1, .highlight .s2 { color: #a5d6a7; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #7d8691; font-style: italic; }
+.highlight .k, .highlight .kd, .highlight .kn { color: #ff9e64; }
+.highlight .o, .highlight .p { color: var(--night-soft); }
+
+/* --------------------------------------------------------------- tables */
+table {
+  border-collapse: collapse;
+  width: min(100%, 46rem);
+  margin: 1.9rem 0;
+  font-size: .95rem;
+  font-family: var(--sans);
+  font-weight: 400;
+}
+thead th {
+  text-align: left;
+  font: 600 .75rem/1.3 var(--sans);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0 1rem .6rem 0;
+  border-bottom: 2px solid var(--ink);
+  vertical-align: bottom;
+}
+tbody td {
+  padding: .8rem 1rem .8rem 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+  line-height: 1.55;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td:last-child, th:last-child { padding-right: 0; }
+table code { font-size: .84em; }
+
+img { max-width: 100%; height: auto; }
+
+/* ------------------------------------------------------- contents panel */
+.toc {
+  position: sticky; top: 2.5rem;
+  flex: 0 0 15rem; width: 15rem;
+  padding: 4.8rem 0 0;
+  font-family: var(--sans);
+  font-size: .8125rem;
+  line-height: 1.45;
+  display: none;
+}
+.toc h2 {
+  font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 600;
+  margin: 0 0 .9rem; padding: 0; border: 0;
+}
+.toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--rule); }
+.toc li { margin: 0; }
+.toc a {
+  display: block; padding: .32rem 0 .32rem .9rem;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--ink-soft); text-decoration: none;
+}
+.toc a:hover { color: var(--ink); }
+.toc a.here { color: var(--accent); border-left-color: var(--accent); }
+
+@media (min-width: 72rem) {
+  .has-toc .toc { display: block; }
+}
+
+/* ------------------------------------------------------------- colophon */
+.colophon {
+  background: var(--night);
+  color: var(--night-soft);
+  margin-top: 4rem;
+  font-family: var(--sans);
+  font-size: .875rem;
+  line-height: 1.6;
+}
+.colophon .bar {
+  max-width: 76rem; margin: 0 auto;
+  padding: 3.2rem 1.75rem 3.6rem;
+  display: grid; gap: 2.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.colophon .wordmark.small {
+  font-size: 1rem; display: block; margin-bottom: .9rem;
+  color: var(--night-ink);
+}
+.colophon h2 {
+  font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--night-soft); font-weight: 600;
+  margin: 0 0 .9rem; padding: 0; border: 0;
+}
+.colophon a { color: var(--night-accent); text-decoration: none; }
+.colophon a:hover { text-decoration: underline; }
+.colophon .col > a { display: block; margin-bottom: .45rem; }
+.colophon p { margin: 0 0 .9rem; max-width: 24rem; }
+.colophon .fine { color: var(--ink-faint); font-size: .8125rem; }
+
+/* ----------------------------------------------------------------- small */
+@media (max-width: 48rem) {
+  body { font-size: 1rem; }
+  .masthead .bar { padding: 1rem 1.25rem; gap: 1rem; }
+  /* Its own row, so the links wrap inside the viewport instead of pushing
+     the page wider than the screen. */
+  .masthead nav { flex: 1 1 100%; margin-left: 0; gap: 1.1rem; font-size: .78rem; }
+  /* A wide table scrolls itself rather than widening the page. */
+  table { display: block; width: 100%; overflow-x: auto; }
+  .shell { padding: 0 1.25rem; }
+  main { padding: 2.75rem 0 4rem; }
+  h2 { margin-top: 2.6rem; }
+  pre { padding: 1.1rem; font-size: .76rem; }
+  .colophon .bar { padding: 2.4rem 1.25rem 2.8rem; }
+}

@@ -4,7 +4,9 @@ title: N-DOS
 description: >-
   A shared language for animal neuroscience data, and the tooling
   that makes following it practical.
-theme: jekyll-theme-primer
+# No theme: the layout, the stylesheet and the fonts are in site/
+# and are copied here. A themed site looks like the theme.
+plugins: [jekyll-seo-tag]
 exclude: [README.md]
 include: [schemas]
 
@@ -18,4 +20,5 @@ defaults:
   - scope:
       path: ""
     values:
+      layout: default
       image: /assets/social-card.png
