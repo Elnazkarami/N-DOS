@@ -7,3 +7,15 @@ description: >-
 theme: jekyll-theme-primer
 exclude: [README.md]
 include: [schemas]
+
+# Jekyll's SEO tag builds the link preview from these. Without an
+# absolute url it cannot, and a posted link renders as a bare URL.
+url: https://elnazkarami.github.io
+baseurl: /N-DOS
+twitter:
+  card: summary_large_image
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: /assets/social-card.png

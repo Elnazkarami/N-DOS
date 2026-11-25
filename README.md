@@ -968,6 +968,7 @@ additionally validates generated manifests against the published schema.
 | `gui/` | Its source, for changing it — see [gui/README.md](https://github.com/Elnazkarami/N-DOS/blob/main/gui/README.md) |
 | `scripts/` | Regenerating what is derived: field definitions, the built interface, the site |
 | `docs/` | The published site — generated; do not edit by hand |
+| `assets/` | The link preview card and site icon, and how to regenerate them |
 | `SPECIFICATION.md` | **The standard itself** |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

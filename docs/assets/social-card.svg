@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640"
+     viewBox="0 0 1280 640" role="img"
+     aria-label="N-DOS — a shared language for animal neuroscience data, and the tooling that makes following it practical">
+  <title>N-DOS</title>
+  <!-- The link preview card. Deliberately a wordmark and nothing else: a
+       project with no completed pilots has not earned a logo, and a card
+       that is only type never goes out of date. Source of the PNG beside
+       it; see assets/README.md to regenerate. -->
+  <style>
+    .sans { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  </style>
+
+  <rect width="1280" height="640" fill="#0d1117"/>
+  <rect x="0" y="0" width="1280" height="6" fill="#58a6ff"/>
+
+  <text class="sans" x="88" y="150" fill="#8b949e"
+        font-size="23" font-weight="500" letter-spacing="5.5">
+    NEUROSCIENCE DATA ORGANIZATION SYSTEM
+  </text>
+
+  <text class="sans" x="83" y="320" fill="#e6edf3"
+        font-size="168" font-weight="700" letter-spacing="-2">
+    N-DOS
+  </text>
+
+  <rect x="88" y="366" width="156" height="5" fill="#58a6ff"/>
+
+  <text class="sans" x="88" y="448" fill="#c9d1d9" font-size="39"
+        font-weight="400">
+    A shared language for animal neuroscience data,
+  </text>
+  <text class="sans" x="88" y="500" fill="#c9d1d9" font-size="39"
+        font-weight="400">
+    and the tooling that makes following it practical.
+  </text>
+
+  <text class="mono" x="88" y="580" fill="#58a6ff" font-size="25">
+    pip install ndos
+  </text>
+  <text class="sans" x="1192" y="580" fill="#6e7681" font-size="25"
+        text-anchor="end">
+    elnazkarami.github.io/N-DOS
+  </text>
+</svg>
