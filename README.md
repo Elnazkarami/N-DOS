@@ -2,6 +2,11 @@
 
 [![DOI](https://zenodo.org/badge/1044437034.svg)](https://doi.org/10.5281/zenodo.23167365)
 [![PyPI](https://img.shields.io/pypi/v/ndos)](https://pypi.org/project/ndos/)
+[![Site](https://img.shields.io/badge/site-elnazkarami.github.io%2FN--DOS-0969da)](https://elnazkarami.github.io/N-DOS/)
+
+📖 **[elnazkarami.github.io/N-DOS](https://elnazkarami.github.io/N-DOS/)** —
+the standard, why it exists, the quickstart and the worked examples, on one
+site. This README is the complete command reference.
 
 **Make sense of animal neuroscience data you did not organise yourself.**
 
@@ -37,6 +42,11 @@ does. Three can, and each shows a plan and waits: `organize --mode move`,
 `tags sweep --apply`, `protect --apply`. Other commands write new files — a
 manifest, metadata sheets, a search index, a layout of symlinks, a BIDS export
 — always at a path you give them, never over your originals.
+
+**Why this exists**, with the evidence behind it, is
+[WHY.md](https://github.com/Elnazkarami/N-DOS/blob/main/WHY.md). What is built,
+what is next and what has been deliberately left undone is
+[ROADMAP.md](https://github.com/Elnazkarami/N-DOS/blob/main/ROADMAP.md).
 
 **The layout** is one part of this, not the whole of it.
 [SPECIFICATION.md](https://github.com/Elnazkarami/N-DOS/blob/main/SPECIFICATION.md)
@@ -937,6 +947,8 @@ additionally validates generated manifests against the published schema.
 | `ndos.py` | One command dispatching to all of the below |
 | `QUICKSTART.md` | Fifteen minutes, for a lab member |
 | `RECIPES.md` | What to do when a guess is wrong |
+| `WHY.md` | Why N-DOS exists, and the published evidence for it |
+| `ROADMAP.md` | Shipped, next, waiting for evidence, and not doing |
 | `ndos_report.py` | Inventory report |
 | `ndos_scan.py` | Read-only inventory |
 | `ndos_archive.py` | Archive inspection and planned extraction |
@@ -954,7 +966,8 @@ additionally validates generated manifests against the published schema.
 | `ndos_gui.py` | Serves the local interface, on this machine only |
 | `ndos_gui_static/` | That interface, already built, so no Node is needed |
 | `gui/` | Its source, for changing it — see [gui/README.md](https://github.com/Elnazkarami/N-DOS/blob/main/gui/README.md) |
-| `scripts/` | Regenerating what is derived: field definitions, the built interface |
+| `scripts/` | Regenerating what is derived: field definitions, the built interface, the site |
+| `docs/` | The published site — generated; do not edit by hand |
 | `SPECIFICATION.md` | **The standard itself** |
 | `schemas/` | Versioned JSON Schema contracts |
 | `tests/` | Test suite and synthetic fixtures |

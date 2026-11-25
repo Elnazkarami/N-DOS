@@ -2,6 +2,10 @@
 title: "Quickstart"
 ---
 
+[Home](index.html) · [Why](why.html) · [The standard](specification.html) · **Quickstart** · [When a guess is wrong](recipes.html) · [Examples](index.html#worked-examples) · [Roadmap](roadmap.html) · [Contributing](contributing.html) · [GitHub](https://github.com/Elnazkarami/N-DOS)
+
+---
+
 # NDOS quickstart
 
 The standard covers two situations, and so does this guide.
@@ -132,7 +136,7 @@ python3 ndos.py organize plan /path/to/your/data -d ./project \
     --subject-depth 2 --session-depth 3
 ```
 
-[RECIPES.md](https://github.com/Elnazkarami/N-DOS/blob/main/RECIPES.md) works through the cases where this is needed.
+[RECIPES.md](recipes.html) works through the cases where this is needed.
 
 Files it cannot identify go to `flagged_data/` with their original structure
 and a note. Nothing is discarded.
@@ -302,7 +306,7 @@ two steps do change something: `protect --apply` makes raw data read-only
 `tags sweep --apply` deletes files, which it will not do without naming them
 first.
 
-**[RECIPES.md](https://github.com/Elnazkarami/N-DOS/blob/main/RECIPES.md) covers the common ones**: everything landing in
+**[RECIPES.md](recipes.html) covers the common ones**: everything landing in
 `flagged_data/`, the wrong folder being read as the subject, a session split in
 two, a scan that will not finish, and how to prove for yourself that nothing
 was altered.
