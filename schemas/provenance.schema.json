@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ndos.dev/schemas/provenance/0.1",
+  "$id": "https://elnazkarami.github.io/N-DOS/schemas/provenance/0.1.json",
   "title": "NDOS Run Record",
   "description": "One execution of a command: what it used, what it produced, the code version and environment it ran in, and whether it succeeded. Aligned with the W3C PROV notion of an Activity that used and generated Entities. Failed runs are recorded, because an artefact produced by a run that exited non-zero is exactly what a person needs warning about.",
   "type": "object",

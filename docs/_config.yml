@@ -1,0 +1,9 @@
+# Built by scripts/build_docs.py. Do not edit docs/ by hand: it is
+# regenerated from the canonical files and a test checks it matches.
+title: N-DOS
+description: >-
+  A shared language for animal neuroscience data, and the tooling
+  that makes following it practical.
+theme: jekyll-theme-primer
+exclude: [README.md]
+include: [schemas]

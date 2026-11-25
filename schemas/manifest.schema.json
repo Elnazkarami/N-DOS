@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ndos.dev/schemas/manifest/0.2",
+  "$id": "https://elnazkarami.github.io/N-DOS/schemas/manifest/0.2.json",
   "title": "NDOS File Manifest",
   "description": "A read-only inventory of files observed below an NDOS scan root. A manifest records what was seen, when, and by what tool; it never implies that anything was changed.",
   "type": "object",
